@@ -7,10 +7,13 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 ---
 
 ## 1. Tech Stack
-* **Database Engine:** Supabase PostgreSQL (Version 15+)
-* **Transformation Language:** PostgreSQL PL/pgSQL (Stored procedures, Triggers, Views)
-* **Orchestration:** Built-in `pg_cron` extension (Database-internal scheduling)
-* **Pipeline Validation:** Node.js (v18+) using `pg` driver
+
+| Technology Layer | Tool / Engine | Purpose |
+| :--- | :--- | :--- |
+| **Database Engine** | Supabase PostgreSQL (v15+) | Staging landing zone & main database engine |
+| **Transformation Language** | PostgreSQL PL/pgSQL | Custom triggers, classifications, and dynamic proportional distributions |
+| **Orchestration** | Built-in `pg_cron` extension | Automates polling crawlers and scheduling ingestion 24/7 every hour |
+| **Pipeline Validation** | Node.js (v18+) | Executes pipeline DDL updates and performs data integrity checks |
 
 ---
 
