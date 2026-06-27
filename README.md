@@ -11,7 +11,6 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 * **Transformation Language:** PostgreSQL PL/pgSQL (Stored procedures, Triggers, Views)
 * **Orchestration:** Built-in `pg_cron` extension (Database-internal scheduling)
 * **Pipeline Validation:** Node.js (v18+) using `pg` driver
-* **Data Format:** Snappy-compressed Apache Parquet (Optional for AWS S3 lake offload)
 
 ---
 
@@ -25,9 +24,6 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 │   ├── expand_student_transactions.sql# Distributes student monthly transactions to hourly format
 │   ├── consolidate_events_schema.sql  # Text classification classification functions & scraped events sync
 │   └── consolidate_weather_schema.sql # Pagasa alert parsing & current/forecast weather sync
-├── scratch/
-│   ├── supabase_to_s3_etl.py          # [Free Tier Ingestion] Extracts Supabase tables to S3 as Parquet
-│   └── query_s3_duckdb.py             # [Free Tier Query] Queries S3 Parquet files directly using DuckDB
 ├── run_pipeline.js                    # Core orchestration runner and data integrity check suite
 ├── package.json                       # Node dependencies (pg, @supabase/supabase-js)
 ├── .env.example                       # Template for database credentials
@@ -96,13 +92,3 @@ The Node validation script performs three core integrity checks on every active 
 1. **Row Sum Discrepancy Check:** Verifies that the sum of all individual station entry/exit columns matches the `total_entry` and `total_exit` columns exactly.
 2. **Negative Value Check:** Scans all stations and total columns to guarantee that no negative values exist.
 3. **Unique IDs Check:** Validates that there are no duplicate Primary Keys.
-
----
-
-## 6. Hybrid Cost-Free AWS S3 Storage Lake (Optional)
-
-If the active database scale grows and you want to maintain a **100% cost-free analytics query engine** while using **Amazon S3** as your main database lake, you can deploy the hybrid stack located in `scratch/`:
-
-1. **Scheduled Ingestion (GitHub Actions):** Save [s3_ingestion.yml](file:///C:/Users/Jed/G11-Transformation/aws_replication_architecture.md#2-ingestion--transport-supabase-to-aws-s3-100-free) in `.github/workflows/`. It uses a free GitHub runner to execute [supabase_to_s3_etl.py](file:///C:/Users/Jed/.gemini/antigravity-ide/brain/57b3d4c0-e753-4ce4-adc8-f6e284aa45b8/scratch/supabase_to_s3_etl.py), uploading Snappy-compressed Parquet files of the active tables directly to S3.
-2. **Serverless S3 Querying (DuckDB):** Run [query_s3_duckdb.py](file:///C:/Users/Jed/.gemini/antigravity-ide/brain/57b3d4c0-e753-4ce4-adc8-f6e284aa45b8/scratch/query_s3_duckdb.py) locally or on your dashboard host. It queries S3 Parquet files directly using HTTPS range requests, keeping network transfer well within the AWS Free Tier.
-3. **Dashboard Viz:** Host your compiled HTML/JS dashboard on **GitHub Pages** (via Evidence.dev) or **Streamlit Community Cloud** at zero cost.
