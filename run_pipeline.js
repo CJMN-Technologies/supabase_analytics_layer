@@ -162,6 +162,68 @@ async function verifyIntegrity(client) {
     console.log(`  🟢 Monthly sum validation: PASSED (All non-zero months match perfectly with original transactions)`);
   }
 
+  // Check 5: Events Consolidated Classification & Normalization Checks
+  console.log(`\nValidating events classification & normalization...`);
+  
+  // 5a. False Positive Meeting/Ocular Check
+  const falsePosQuery = `
+    SELECT COUNT(*) AS false_positives
+    FROM external.events_consolidated ec
+    JOIN external.academic_lgu_events al ON ec.source_id = al.id AND ec.source_table = 'academic_lgu_events'
+    WHERE ec.event_category != 'administrative'
+      AND (
+        al.post_text ~* '(coordination\\s+meeting|ocular\\s+visit|ocular\\s+meeting|planning\\s+meeting|planning\\s+session|preparatory\\s+meeting|committee\\s+meeting|coordination\\s+visit|pre-event\\s+coordination)'
+        OR (al.post_text ~* '(meeting|ocular|planning|preparation|discussion)' AND NOT al.post_text ~* '(suspend|walang\\s+pasok|no\\s+class|strike|tigil\\s+pasada|welga)')
+      );
+  `;
+  const fpRes = await client.query(falsePosQuery);
+  const falsePositives = parseInt(fpRes.rows[0].false_positives, 10);
+  
+  if (falsePositives === 0) {
+    console.log(`  🟢 Classifier false positives: PASSED (0 planning/meeting events classified as active transit anomalies)`);
+  } else {
+    console.log(`  🔴 Classifier false positives: FAILED (${falsePositives} coordination/planning meetings incorrectly classified!)`);
+    allPassed = false;
+  }
+
+  // 5b. Class Suspension and School Break Score Check
+  const csQuery = `
+    SELECT COUNT(*) AS invalid_suspensions
+    FROM external.events_consolidated
+    WHERE event_category IN ('class_suspension', 'school_break') AND normalized_score != 1.0;
+  `;
+  const csRes = await client.query(csQuery);
+  const invalidSuspensions = parseInt(csRes.rows[0].invalid_suspensions, 10);
+
+  if (invalidSuspensions === 0) {
+    console.log(`  🟢 Class suspension and school break normalization: PASSED (All class suspensions/breaks have normalized_score = 1.0)`);
+  } else {
+    console.log(`  🔴 Class suspension and school break normalization: FAILED (${invalidSuspensions} suspensions/breaks have invalid scores!)`);
+    allPassed = false;
+  }
+
+  // 5c. Academic Surge Weight (A_sw) Density Score Check (Step 3b)
+  const aswQuery = `
+    SELECT COUNT(*) AS invalid_groups
+    FROM (
+        SELECT event_date, station, COUNT(*) as event_count, MIN(normalized_score) as min_score, MAX(normalized_score) as max_score
+        FROM external.events_consolidated
+        WHERE event_category = 'major_event'
+        GROUP BY event_date, station
+    ) g
+    WHERE (event_count >= 3 AND (min_score != 1.0 OR max_score != 1.0))
+       OR (event_count BETWEEN 1 AND 2 AND (min_score != 0.5 OR max_score != 0.5));
+  `;
+  const aswRes = await client.query(aswQuery);
+  const invalidAswGroups = parseInt(aswRes.rows[0].invalid_groups, 10);
+
+  if (invalidAswGroups === 0) {
+    console.log(`  🟢 Academic surge weight (A_sw) density normalization: PASSED (All major events normalized according to event count density per station/date)`);
+  } else {
+    console.log(`  🔴 Academic surge weight (A_sw) density normalization: FAILED (${invalidAswGroups} station/date groups have incorrect A_sw scores!)`);
+    allPassed = false;
+  }
+
   console.log('\n============================================================');
   if (allPassed) {
     console.log('🏆 PIPELINE INTEGRITY CHECK PASSED WITH 100% SUCCESS!');
@@ -195,16 +257,22 @@ async function main() {
 
   try {
     // 1. Restore backups
-    await runSQLFile(client, path.join(__dirname, 'sql', 'restore_ridership_backups.sql'));
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'restore_ridership_backups.sql'));
 
-    // 2. Standardize schemas and dimensions
-    await runSQLFile(client, path.join(__dirname, 'sql', 'standardize_schemas_scd.sql'));
+    // 2. Standardize internal dimensions
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'standardize_internal_dimensions.sql'));
 
-    // 3. Transform 5-year data to hourly
-    await runSQLFile(client, path.join(__dirname, 'sql', 'transform_ridership_hourly.sql'));
+    // 3. Standardize literature dimensions
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'literature', 'standardize_literature_dimensions.sql'));
 
-    // 4. Expand student transactions
-    await runSQLFile(client, path.join(__dirname, 'sql', 'expand_student_transactions.sql'));
+    // 4. Standardize external triggers
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'external', 'standardize_external_triggers.sql'));
+
+    // 5. Transform 5-year data to hourly
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'transform_ridership_hourly.sql'));
+
+    // 6. Expand student transactions
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'expand_student_transactions.sql'));
 
     // 4. Run verification
     await verifyIntegrity(client);

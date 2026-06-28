@@ -2,6 +2,7 @@
 -- SQL Script: Re-aggregate Active Hourly Tables to Backup Tables
 -- Schema: AFCS
 -- Targets: ridership_2021_backup to ridership_2025_backup
+-- Classification: Internal Dataset (5-Year AFCS)
 -- ============================================================
 
 -- Restore 2021 Backup

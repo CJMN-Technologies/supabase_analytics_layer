@@ -4,6 +4,7 @@
 -- Baseline Table: "AFCS".ridership_2025
 -- Backup Source: "AFCS".student_transactions_backup
 -- Period: June 2025 - March 2026 (non-zero months)
+-- Classification: Internal Dataset (Student Transactions)
 -- ============================================================
 
 -- Step 1: Recreate Table

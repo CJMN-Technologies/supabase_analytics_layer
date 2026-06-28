@@ -21,7 +21,7 @@ Per your request, the data has been restricted strictly to the **June 2025 – M
 > **Data Integrity Bug Fix:** During validation, we detected exactly **1 row** with a negative station exit count (`v_mapa_exit = -1` on `2025-12-31` at `21:00`). 
 > 
 > * **Cause:** In the raw baseline `ridership_2025` table for that date/time, the sum of the individual station exit columns (389 exits) exceeded the value in the table's `total_exit` column (375 exits). Because our initial formula used the `total_exit` column as the denominator, the cumulative rounding allocation exceeded the target row total by 1, resulting in a negative remainder of `-1` for the final station.
-> * **Resolution:** We updated the SQL script to compute the actual sum of the station columns dynamically and use that sum as the denominator for the station-level distribution. This mathematically guarantees that the running proportions never exceed 1.0, and thus the final station remainder is **always non-negative**. We recreated the table and re-ran the query with this corrected logic.
+> * **Resolution:** We updated the SQL script to compute the actual sum of the station columns dynamically and use that sum as the denominator for the station-level distribution. This mathematically guarantees that the running proportions never exceed 1.0, and thus the final station remainder is **always non-negative**. We recreated the table and re-run the query with this corrected logic.
 
 ---
 
@@ -109,3 +109,64 @@ When running the automated validation suite via `node run_pipeline.js`:
 - **Row Sum Discrepancy Check:** **Passed** for all tables (0 discrepancies, excluding pre-existing source hourly rows for June & Nov 1st in 2023).
 - **Negative Value Check:** **Passed** (0 negative values found across all tables).
 - **Unique Primary Key Check:** **Passed** (All primary keys are unique and sequentially formatted).
+
+---
+
+# Walkthrough - Event Classification & Dynamic Normalization Correction
+
+I have successfully resolved the classification and normalization issues affecting the qualitative events preparation pipeline. 
+
+## Key Corrections & Enhancements
+
+1. **Global Planning/Meeting Exclusions:**
+   - **Issue:** Scraped events containing keywords like "coordination meeting" or "ocular visit" (such as the Tamaraw Send-Off Concert preparation meeting `external_lgu_0005`) were incorrectly categorized as active ridership disruptions (e.g., `major_event`).
+   - **Resolution:** Added a global regex filter at the top of [classify_event_from_text](file:///c:/Users/Jed/G11-Transformation/sql/standardize_schemas_scd.sql#L288) (and `consolidate_events_schema.sql`). This filter maps planning, coordination, preparatory meetings, and ocular visits to an `administrative` category (`affects_ridership := FALSE`), effectively filtering them out of active transit anomalies. Actual suspensions or strikes that mention meetings are explicitly bypassed and preserved.
+
+2. **Trigger-Based Dynamic A_sw Recalculation:**
+   - **Issue:** Academic events (like `major_event`) had their `normalized_score` set to the raw literature weight (`0.65`) at the row level, rather than being aggregated into the dynamic A_sw scale (`0.0`, `0.5`, or `1.0` depending on the count of active events for that station/day) specified in Step 3b.
+   - **Resolution:** Implemented an `AFTER INSERT OR UPDATE OR DELETE` trigger `tg_recalculate_asw` (using trigger function `recalculate_asw_score`) on [events_consolidated](file:///c:/Users/Jed/G11-Transformation/sql/standardize_schemas_scd.sql#L908). It dynamically counts major events for the same station and event date and updates all corresponding rows to have the correct aggregate A_sw normalized score. Recursion is prevented by checking if the score is `DISTINCT FROM` the calculated aggregate value.
+
+3. **Rename of weather_consolidated p_idx Column:**
+   - **Issue:** The meteorological friction normalized score was named `p_idx` in `weather_consolidated`, while the events normalized score was named `normalized_score` in `events_consolidated`. To keep the schema consistent, the columns should have the same name.
+   - **Resolution:** Standardized the schema by renaming `p_idx` to `normalized_score` in `external.weather_consolidated`. The renaming was implemented safely using PostgreSQL conditional DDL in [standardize_schemas_scd.sql:L133-151](file:///c:/Users/Jed/G11-Transformation/sql/standardize_schemas_scd.sql#L133-L151) and [consolidate_events_schema.sql:L475-493](file:///c:/Users/Jed/G11-Transformation/sql/consolidate_events_schema.sql#L475-L493) to preserve backward compatibility. The weather calculation function `calculate_weather_friction` and trigger functions were also updated to output `normalized_score`.
+
+4. **Creation of School Break Trigger Category:**
+   - **Issue:** Scheduled academic holidays (like semestral break, Christmas break, or summer vacation) were previously classified under the `Mid-Day Class Suspension` trigger category (weight `0.85`), which represents unscheduled class disruptions.
+   - **Resolution:** Created a dedicated `School Break` trigger category in `external.friction_weight` (assigned a weight of `0.85` representing its similar traffic-calming effect on student transit, and backed by NCTS publications). Updated [classify_calendar_event](file:///c:/Users/Jed/G11-Transformation/sql/standardize_schemas_scd.sql#L508) and `classify_event_from_text` to separate vacations/breaks into the new `school_break` category. These break events are normalized to `1.0` (binary class-off day).
+
+5. **Rename of Mid-Day Class Suspension to Class Suspension / Holiday:**
+   - **Issue:** The trigger category `Mid-Day Class Suspension` is too narrow because it also includes all-day public holidays (like local foundation days) and day-prior declarations.
+   - **Resolution:** Renamed the trigger category to `Class Suspension / Holiday` in `external.friction_weight` and `external.friction_weight_backup`. Updated the classification triggers and calendar ingestion logic in both [standardize_schemas_scd.sql:L405](file:///c:/Users/Jed/G11-Transformation/sql/standardize_schemas_scd.sql#L405) and `consolidate_events_schema.sql` to output `Class Suspension / Holiday` as the trigger category.
+
+6. **Correction of Final Grades Posting False Positive:**
+   - **Issue:** Events like `"Last Day of Posting of Students' Final Grades"` contain the word `"Final"`, which matched the regex for `finals?` and incorrectly classified it as `exam_week` / `University Exam Week` with a weight of `0.2` (affecting ridership). Grade posting is an internal administrative event and does not represent student exam traffic on campus.
+   - **Resolution:** Moved the promotions board and grade posting administrative check to the very top of both [classify_calendar_event](file:///c:/Users/Jed/G11-Transformation/sql/standardize_schemas_scd.sql#L508) and `classify_event_from_text` in both SQL schema scripts. This ensures administrative events are intercepted and marked as `affects_ridership := FALSE` before any keyword-matching patterns (like `"final"`) can evaluate them as active exam events.
+
+7. **Standardizing Consolidated Weather Labels (`event_category` & `trigger_category`):**
+   - **Issue:** The `weather_consolidated` table lacked the `event_category` and `trigger_category` columns found in `events_consolidated`, making consolidated analytics across environmental and academic datasets inconsistent.
+   - **Resolution:** Added `event_category` and `trigger_category` columns to `external.weather_consolidated`. Updated the database trigger functions `sync_weather_current_to_consolidated` and `sync_weather_forecasts_to_consolidated` to dynamically populate `event_category = 'weather_advisory'` and `trigger_category` with the corresponding PAGASA category (e.g. `'Clear / Fair'`, `'Heavy Rain'`, etc.) returned by the calculation engine. Also implemented an UPDATE backfill to update all existing weather rows.
+
+8. **Automated Verification Integration:**
+   - **Issue:** Event classification and normalization anomalies were previously unmonitored, allowing bugs to pass silently.
+   - **Resolution:** Integrated three automated validation checks into [run_pipeline.js](file:///c:/Users/Jed/G11-Transformation/run_pipeline.js#L165):
+     - **False Positive Check:** Confirms that 0 planning/meeting events are classified as active transit anomalies.
+     - **Class Suspension & School Break Check:** Asserts that 100% of class suspensions and school break events have `normalized_score = 1.0` (binary normalization).
+     - **Academic Surge Weight (A_sw) Check:** Verifies that major events are normalized to `0.5` (for 1-2 events) or `1.0` (for $\ge 3$ events) per station/date.
+
+---
+
+## Verification & Integrity Check Results
+
+Executing `node run_pipeline.js` verifies the entire database prepare, rebuild, and classification pipeline:
+
+```text
+Validating events classification & normalization...
+  🟢 Classifier false positives: PASSED (0 planning/meeting events classified as active transit anomalies)
+  🟢 Class suspension and school break normalization: PASSED (All class suspensions/breaks have normalized_score = 1.0)
+  🟢 Academic surge weight (A_sw) density normalization: PASSED (All major events normalized according to event count density per station/date)
+
+============================================================
+🏆 PIPELINE INTEGRITY CHECK PASSED WITH 100% SUCCESS!
+============================================================
+```
+All verifications passed with **100% success**!
