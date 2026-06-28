@@ -15,3 +15,6 @@ yarn-error.log*
 Thumbs.db
 .vscode/
 .idea/
+
+# Documentation PDF
+Transformation Layer/Transformation_Layer_Documentation.pdf
