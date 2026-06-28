@@ -18,18 +18,29 @@ BEGIN
   END IF;
 END $$;
 
-DROP TABLE IF EXISTS "APTA".apta_protocols;
+-- 1. Create main apta_protocols table (1NF compliant - multi-valued column removed)
+DROP TABLE IF EXISTS "APTA".apta_protocols CASCADE;
 CREATE TABLE "APTA".apta_protocols (
     id text PRIMARY KEY,
     apta_standard_code text NOT NULL,
     official_document_title text NOT NULL,
     scope_relevance_to_surge_management text NOT NULL,
-    human_centric_ground_tactics text NOT NULL,
     open_access_link_source text NOT NULL,
     load_timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
-DROP TABLE IF EXISTS "external".friction_weight;
+-- 2. Create normalized apta_protocols_tactics table
+DROP TABLE IF EXISTS "APTA".apta_protocols_tactics CASCADE;
+CREATE TABLE "APTA".apta_protocols_tactics (
+    id text PRIMARY KEY,
+    protocol_id text NOT NULL REFERENCES "APTA".apta_protocols(id) ON DELETE CASCADE,
+    tactic_name text NOT NULL,
+    tactic_description text NOT NULL,
+    load_timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- 3. Create friction_weight table
+DROP TABLE IF EXISTS "external".friction_weight CASCADE;
 CREATE TABLE "external".friction_weight (
     id text PRIMARY KEY,
     friction_domain text NOT NULL,
@@ -41,12 +52,37 @@ CREATE TABLE "external".friction_weight (
     load_timestamp timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
 );
 
-INSERT INTO "APTA".apta_protocols (id, apta_standard_code, official_document_title, scope_relevance_to_surge_management, human_centric_ground_tactics, open_access_link_source, load_timestamp)
+-- 4. Populate main apta_protocols table
+INSERT INTO "APTA".apta_protocols (id, apta_standard_code, official_document_title, scope_relevance_to_surge_management, open_access_link_source, load_timestamp)
 SELECT 
   'APTA-' || LPAD((row_number() OVER (ORDER BY load_timestamp, apta_standard_code))::text, 2, '0') as id,
-  apta_standard_code, official_document_title, scope_relevance_to_surge_management, human_centric_ground_tactics, open_access_link_source, load_timestamp
+  apta_standard_code, official_document_title, scope_relevance_to_surge_management, open_access_link_source, load_timestamp
 FROM "APTA".apta_protocols_backup;
 
+-- 5. Split and populate normalized tactics table
+INSERT INTO "APTA".apta_protocols_tactics (id, protocol_id, tactic_name, tactic_description, load_timestamp)
+SELECT 
+  p.id || '-T' || LPAD(sub.tactic_index::text, 2, '0') as id,
+  p.id as protocol_id,
+  trim(split_part(sub.tactic, ':', 1)) as tactic_name,
+  trim(split_part(sub.tactic, ':', 2)) as tactic_description,
+  now() as load_timestamp
+FROM (
+  SELECT 
+    apta_standard_code,
+    tactic,
+    row_number() OVER (PARTITION BY apta_standard_code) as tactic_index
+  FROM (
+    SELECT 
+      apta_standard_code,
+      regexp_split_to_table(human_centric_ground_tactics, '•\s*') as tactic
+    FROM "APTA".apta_protocols_backup
+  ) raw_sub
+  WHERE trim(tactic) != ''
+) sub
+JOIN "APTA".apta_protocols p ON p.apta_standard_code = sub.apta_standard_code;
+
+-- 6. Populate friction_weight table
 INSERT INTO "external".friction_weight (id, friction_domain, trigger_category, specific_condition_api_input, friction_weight, ncr_literature_source_basis, open_access_link, load_timestamp)
 SELECT 
   'FRI-' || 
