@@ -3,6 +3,48 @@
 -- Classification: External Dataset (Weather consolidated, Events consolidated)
 -- ============================================================================
 
+-- 1ad. Station Name Normalization Function to match unpivoted ridership conventions
+CREATE OR REPLACE FUNCTION external.normalize_station_name(p_station text)
+RETURNS text AS $$
+DECLARE
+    v_clean text;
+BEGIN
+    v_clean := UPPER(TRIM(COALESCE(p_station, 'All Stations')));
+    
+    IF v_clean IN ('ALL', 'ALL STATIONS', 'ALL STATION', '') THEN
+        RETURN 'All Stations';
+    ELSIF v_clean IN ('RECTO') THEN
+        RETURN 'Recto';
+    ELSIF v_clean IN ('LEGARDA') THEN
+        RETURN 'Legarda';
+    ELSIF v_clean IN ('PUREZA') THEN
+        RETURN 'Pureza';
+    ELSIF v_clean IN ('V. MAPA', 'VMAPA', 'V MAPA') THEN
+        RETURN 'V. Mapa';
+    ELSIF v_clean IN ('J. RUIZ', 'JRUIZ', 'J RUIZ') THEN
+        RETURN 'J. Ruiz';
+    ELSIF v_clean IN ('GILMORE') THEN
+        RETURN 'Gilmore';
+    ELSIF v_clean IN ('BETTY GO-BELMONTE', 'BETTY GO BELMONTE', 'BETTY GO') THEN
+        RETURN 'Betty Go-Belmonte';
+    ELSIF v_clean IN ('ARANETA CENTER-CUBAO', 'ARANETA CENTER CUBAO', 'ARANETA', 'CUBAO') THEN
+        RETURN 'Araneta Center Cubao';
+    ELSIF v_clean IN ('ANONAS') THEN
+        RETURN 'Anonas';
+    ELSIF v_clean IN ('KATIPUNAN') THEN
+        RETURN 'Katipunan';
+    ELSIF v_clean IN ('SANTOLAN') THEN
+        RETURN 'Santolan';
+    ELSIF v_clean IN ('MARIKINA-PASIG', 'MARIKINA PASIG', 'MARIKINA') THEN
+        RETURN 'Marikina-Pasig';
+    ELSIF v_clean IN ('ANTIPOLO') THEN
+        RETURN 'Antipolo';
+    ELSE
+        RETURN INITCAP(p_station);
+    END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
 -- Ensure weather_consolidated column is named normalized_score instead of p_idx or friction_weight
 DO $$
 BEGIN
@@ -345,7 +387,7 @@ BEGIN
     )
     VALUES (
         v_scrape_id,
-        COALESCE(NEW.station, 'All Stations'),
+        external.normalize_station_name(COALESCE(NEW.station, 'All Stations')),
         v_event_date,
         'academic_lgu_events',
         NEW.id,
@@ -516,7 +558,7 @@ BEGIN
         )
         VALUES (
             v_consolidated_id,
-            COALESCE(v_row.station, 'All Stations'),
+            external.normalize_station_name(COALESCE(v_row.station, 'All Stations')),
             v_event_date,
             p_table_name,
             COALESCE(v_row.id, 'row-' || v_count),

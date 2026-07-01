@@ -20,17 +20,22 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 ## 2. Directory Structure
 
 ```text
-├── sql/
-│   ├── restore_ridership_backups.sql  # Aggregates raw ridership inputs to backups
-│   ├── standardize_schemas_scd.sql    # Standardizes dimensions, sets up dynamic transform, triggers & cron jobs
-│   ├── transform_ridership_hourly.sql # Dynamic transformation calling wrapper
-│   ├── expand_student_transactions.sql# Distributes student monthly transactions to hourly format
-│   ├── consolidate_events_schema.sql  # Text classification classification functions & scraped events sync
-│   └── consolidate_weather_schema.sql # Pagasa alert parsing & current/forecast weather sync
-├── run_pipeline.js                    # Core orchestration runner and data integrity check suite
-├── package.json                       # Node dependencies (pg, @supabase/supabase-js)
-├── .env.example                       # Template for database credentials
-└── README.md                          # Project Documentation
+├── Transformation Layer/
+│   ├── internal/
+│   │   ├── restore_ridership_backups.sql      # Aggregates raw ridership inputs to backups
+│   │   ├── standardize_internal_dimensions.sql# Standardizes PSOR and Station Capacity dimensions
+│   │   ├── transform_ridership_hourly.sql     # Converts backups to hourly active ridership
+│   │   └── expand_student_transactions.sql    # Distributes student monthly transactions to hourly
+│   ├── external/
+│   │   ├── consolidate_events_schema.sql      # Text classification & scraped events sync
+│   │   ├── consolidate_weather_schema.sql     # Pagasa weather alert parsing & current/forecast weather sync
+│   │   └── standardize_external_triggers.sql  # Compiles classifiers and A_sw/PAGASA triggers
+│   └── literature/
+│       └── standardize_literature_dimensions.sql # Sets up APTA tables and seeds weights
+├── run_pipeline.js                            # Core orchestration runner and data integrity check suite
+├── package.json                               # Node dependencies (pg, @supabase/supabase-js)
+├── .env.example                               # Template for database credentials
+└── README.md                                  # Project Documentation
 ```
 
 ---
@@ -89,9 +94,59 @@ node run_pipeline.js
 
 ---
 
-## 5. Verification & Integrity Checks
+## 5. Analytics Layers (Descriptive & Predictive)
 
-The Node validation script performs three core integrity checks on every active table:
+### 5a. Descriptive Analytics
+*   **Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Pre-computes 80th (Warning) and 90th (Critical) percentiles for every station, day of week, hour period, and flow direction (3,172 baseline records).
+*   **Historical Capacity Benchmarking (`public.descriptive_historical_capacity_benchmarking`):** Calculates the live Commuter Friction Index (CFI) by combining weather, academic, and civic trigger weights (35% / 20% / 45%).
+
+### 5b. Predictive Analytics (ML Integration & What-If Simulator)
+*   **Model Predictions (`Analytics.predictive_model_outputs`):** Decoupled storage landing table for external ML model runner predictions ($B_m$).
+*   **Model Performance (`Analytics.predictive_model_performance`):** Logs XGBoost MAPE/RMSE and RandomForest accuracy/recall.
+*   **Dynamic Volume Adjuster (`Analytics.vw_predictive_metrics`):** Queries a rolling 366-day calendar CTE starting from `CURRENT_DATE`, dynamically joining baseline and consolidations to scale volume forecasts on-the-fly. Automatically falls back to historical medians ($P_{50}$) if model outputs are not yet populated.
+*   **What-If Simulator (`"Analytics".predictive_what_if_scenario_simulator`):** Analytics wrapper function to test hypothetical triggers and calculate peak variance and threat levels in under 5ms:
+    ```sql
+    SELECT * FROM "Analytics".predictive_what_if_scenario_simulator('Katipunan', 1, '17:00', 'entry', 0.8, 1.0, 0.0, 1000);
+    ```
+
+### 5c. Analytics Layer Views (Dashboard Endpoints)
+Exposed in the `"Analytics"` schema for direct REST API client queries:
+*   `"Analytics".descriptive_live_event_feed` (Live event feed & trigger aggregation)
+*   `"Analytics".descriptive_model_auditing_drift_tracking` (Model auditing actuals vs forecasts comparison)
+*   `"Analytics".predictive_topological_route_map` (Node status classification for topological map)
+*   `"Analytics".predictive_passenger_volume_forecast_24h` (Hourly rolling 24h window)
+*   `"Analytics".predictive_passenger_volume_forecast_1w` (Daily rollup for 7 days)
+*   `"Analytics".predictive_passenger_volume_forecast_1m` (Daily rollup for 30 days)
+*   `"Analytics".predictive_passenger_volume_forecast_quarterly` (Monthly rollup by Quarter)
+*   `"Analytics".predictive_passenger_volume_forecast_1y` (Monthly rollup for 12 months)
+*   `"Analytics".prescriptive_active_checklists` (Actionable checklists mapping tactical steps to 'Command Center Officer' or 'Ground Control Staff' roles).
+*   `"Analytics".prescriptive_action_recommendations` (Actionable risk directives resolved directly to APTA protocol IDs `'APTA-01'` through `'APTA-06'`).
+
+### 5d. Model Training & Testing Pipeline
+The model training, testing, and validation pipeline partitions turnstile data chronologically (80% training / 20% test) and runs performance checks against the four operational benchmarks:
+1. **Volume Prediction Variance ($MVP_{rmse}$):** Variance (RMSE % of mean volume) must be $< 5.00\%$.
+2. **Risk Classification F1-Score ($MVP_{f1}$):** Weighted F1-score of the threat classifier must be $\ge 0.85$.
+3. **Heuristic Compliance ($MVP_{scr}$):** Symbolic Heuristic Compliance Rate (SCR) of deployments must be $100\%$.
+4. **Cloud Pipeline Latency ($MVP_{latency}$):** Ingestion-to-broadcast latency must be $< 3.0$ seconds.
+
+The validation pipeline can be executed:
+- **Database-Natively (Recommended):** By executing `"Analytics Layer/model training, testing and validation"/train_and_validate.sql` inside the database (bypasses local Port 5432/IPv6 network connection blockades).
+- **Via Python Script:** By executing `python "Analytics Layer/model training, testing and validation/train_and_validate.py"`.
+
+---
+
+## 6. Verification & Integrity Checks
+
+The Node validation script performs eleven core integrity checks on every active table:
 1. **Row Sum Discrepancy Check:** Verifies that the sum of all individual station entry/exit columns matches the `total_entry` and `total_exit` columns exactly.
-2. **Negative Value Check:** Scans all stations and total columns to guarantee that no negative values exist.
+2. **Negative Value Check:** Scans all columns to guarantee that no negative values exist.
 3. **Unique IDs Check:** Validates that there are no duplicate Primary Keys.
+4. **Student Transaction Conservation:** Verifies expanded hourly rows match original monthly transactions.
+5. **Meeting Classifier False Positives:** Asserts 0 planning meetings are classified as active disruptions.
+6. **Class Suspension & Holiday/Break Normalization:** Asserts all school breaks have score `1.0`, and validates that midday suspension announcements apply the transition exit evacuation and decay curves correctly.
+7. **Academic Surge Weight (A_sw) Density:** Validates major event grouping rules (0.5 for 1-2, 1.0 for >=3 events).
+8. **Feature Ingestion Vector:** Validates `Analytics.vw_predictive_features` compiles successfully.
+9. **What-If Math Verification:** Verifies simulation formula calculations match expected output variance.
+10. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views return aggregated datasets.
+11. **Prescriptive APTA Schema Integrity Check:** Verifies that protocol deployments resolve to valid APTA IDs, checklists map to target roles, and metrics are mathematically compliant.
+

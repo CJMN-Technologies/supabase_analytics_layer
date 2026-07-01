@@ -166,8 +166,8 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
     meta_text = """
     <b>Prepared for:</b> CJMN Technologies<br/>
     <b>Author:</b> Antigravity AI Assistant (DeepMind Coding Team)<br/>
-    <b>Date:</b> June 28, 2026<br/>
-    <b>Version:</b> 2.0.0 (Classified Subdirectory Release)<br/>
+    <b>Date:</b> June 30, 2026<br/>
+    <b>Version:</b> 2.1.0 (Hourly-Aware Class Suspension Release)<br/>
     <b>Status:</b> Fully Automated & Verified
     """
     story.append(Paragraph(meta_text, meta_style))
@@ -319,8 +319,26 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
     ))
     story.append(PageBreak())
 
-    # 3.4 Ridership hourly
-    story.append(Paragraph("3.4. 5-Year Ridership Proportional Hourly Expansion", h2_style))
+    # 3.4 Hourly-Aware Class Suspension & School Break Logic
+    story.append(Paragraph("3.4. Hourly-Aware Class Suspension & School Break Logic", h2_style))
+    story.append(Paragraph(
+        "To prevent predictive bias where class suspensions announced midday or late in the afternoon would incorrectly "
+        "imply zero passenger volumes for the preceding morning peak, the pipeline implements an hourly-aware "
+        "decay and distribution model for the Civic Mandate Score:",
+        body_style
+    ))
+    story.append(Paragraph("• <b>Day-Before or Early Announcements</b>: Announcements made before 8:00 AM (or on a prior date) "
+                           "apply a score of <b>1.0</b> (full suspension effect) for the entire 24-hour period.", list_style))
+    story.append(Paragraph("• <b>Midday/Late Announcements</b>: For announcements made after 8:00 AM on the event date:<br/>"
+                           "- <i>Pre-Announcement Hours</i> (before announcement_time): Score is <b>0.0</b> (regular class ridership applies).<br/>"
+                           "- <i>Transition Window</i> (within 1 hour post-announcement): Score is <b>-0.4444</b> (representing a negative surge "
+                           "caused by student evacuation/exit volumes).<br/>"
+                           "- <i>Post-Transition Hours</i> (more than 1 hour post-announcement): Score decays/resolves to <b>1.0</b> "
+                           "(full suspension effect for the remainder of the day).", list_style))
+    story.append(Spacer(1, 10))
+
+    # 3.5 Ridership hourly
+    story.append(Paragraph("3.5. 5-Year Ridership Proportional Hourly Expansion", h2_style))
     story.append(Paragraph(
         "Raw ridership is aggregated in historical files into broad shift bands (e.g. 5-7am, 7-9am, 9am-5pm, 5-7pm, 7-10pm). "
         "The database function `transform_ridership_table(p_year)` dynamically discover entry/exit station columns and "
@@ -374,8 +392,8 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
         body_style
     ))
 
-    # 3.5 Student transactions
-    story.append(Paragraph("3.5. Student Transactions Expansion & Weekday Mapping", h2_style))
+    # 3.6 Student transactions
+    story.append(Paragraph("3.6. Student Transactions Expansion & Weekday Mapping", h2_style))
     story.append(Paragraph(
         "Student transaction records are available only as monthly summaries. The pipeline expands them proportionally "
         "into daily/hourly rows using the 2025 commuter ridership as the proportional template profile:",
@@ -447,12 +465,32 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
         "Validates that all major events are correctly grouped and updated to their aggregate density scores (0.5 for 1-2 events, 1.0 for >=3 events).",
         list_style
     ))
+    story.append(Paragraph(
+        "8. <b>Descriptive Layer & Live Feed Checks</b>:<br/>"
+        "Validates that the descriptive metrics view `descriptive_historical_capacity_benchmarking` calculates CFI, the `simulation_history` table archives runs, and the PHT timezone-aware trigger feed compiles correctly.",
+        list_style
+    ))
+    story.append(Paragraph(
+        "9. <b>Feature Ingestion Vector Check</b>:<br/>"
+        "Validates that the feature engineering view `Analytics.vw_predictive_features` successfully compiles and exposes weather and event indicators.",
+        list_style
+    ))
+    story.append(Paragraph(
+        "10. <b>Model Auditing & Drift Checks</b>:<br/>"
+        "Validates that the prediction error tracking view `\"Analytics\".descriptive_model_auditing_drift_tracking` is queryable and ready to compute prediction variance.",
+        list_style
+    ))
+    story.append(Paragraph(
+        "11. <b>What-If Math & Horizon Rollup Validation</b>:<br/>"
+        "Verifies that `Analytics.simulate_scenario` outputs correct mathematical variance (+16.00% under rain/surge stressors) and all 5 multi-horizon views query successfully.",
+        list_style
+    ))
 
     # ================= SECTION 5 =================
-    story.append(Spacer(1, 10))
+    story.append(PageBreak())
     story.append(Paragraph("5. Execution Flow & Automation State", h1_style))
     story.append(Paragraph(
-        "The Supabase Transformation Layer is now in a <b>fully automated, trigger-driven state</b>. "
+        "The LRT Train and Operations Management System is now in a <b>fully automated, trigger-driven state</b>. "
         "The execution orchestration follows the path defined in `run_pipeline.js`:",
         body_style
     ))

@@ -1,6 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 const { Client } = require('pg');
+const dns = require('dns');
+
+// Force DNS resolution to prefer IPv4 to bypass broken local IPv6 environments
+if (typeof dns.setDefaultResultOrder === 'function') {
+  dns.setDefaultResultOrder('ipv4first');
+}
+
 
 // Simple .env file parser (removes need for external dotenv dependency)
 function loadEnv() {
@@ -224,6 +231,225 @@ async function verifyIntegrity(client) {
     allPassed = false;
   }
 
+  // Check 6: Analytics threshold baselines validation
+  console.log(`\nValidating Analytics threshold baselines...`);
+  const thresholdQuery = `
+    SELECT COUNT(*) as total_rows, COUNT(DISTINCT (station_name, day_of_week, hour_period, flow_type)) as unique_keys
+    FROM "Analytics".hourly_threshold_baselines;
+  `;
+  try {
+    const tRes = await client.query(thresholdQuery);
+    const totalThresholdRows = parseInt(tRes.rows[0].total_rows, 10);
+    const uniqueThresholdKeys = parseInt(tRes.rows[0].unique_keys, 10);
+
+    // 13 stations * 7 days * 17 hours (05:00 to 21:00) * 2 flow types (entry/exit) = 3094 rows expected (or more if early/late hours exist)
+    if (totalThresholdRows >= 3094 && totalThresholdRows === uniqueThresholdKeys) {
+      console.log(`  🟢 Threshold baselines validation: PASSED (${totalThresholdRows} baseline records calculated and verified)`);
+    } else {
+      console.log(`  🔴 Threshold baselines validation: FAILED (Expected 3094 rows, found ${totalThresholdRows} total, ${uniqueThresholdKeys} unique)`);
+      allPassed = false;
+    }
+  } catch (err) {
+    console.log(`  🔴 Threshold baselines validation: FAILED (Error querying table: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 7: Descriptive View query validation
+  console.log(`\nValidating Analytics.descriptive_historical_capacity_benchmarking view accessibility & CFI...`);
+  const viewQuery = `
+    SELECT COUNT(*) as test_rows, COUNT(*) FILTER (WHERE cfi IS NOT NULL) as valid_cfi_rows
+    FROM "Analytics".descriptive_historical_capacity_benchmarking
+    LIMIT 100;
+  `;
+  try {
+    const vRes = await client.query(viewQuery);
+    const testRows = parseInt(vRes.rows[0].test_rows, 10);
+    const validCfiRows = parseInt(vRes.rows[0].valid_cfi_rows, 10);
+    if (testRows > 0 && testRows === validCfiRows) {
+      console.log(`  🟢 Descriptive view validation: PASSED (View is queryable and CFI is calculated for all rows)`);
+    } else {
+      console.log(`  🔴 Descriptive view validation: FAILED (Query returned ${testRows} rows, but only ${validCfiRows} have valid CFI)`);
+      allPassed = false;
+    }
+  } catch (err) {
+    console.log(`  🔴 Descriptive view validation: FAILED (Error querying view: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 7b: Live Event Feed view validation
+  console.log(`\nValidating Analytics.descriptive_live_event_feed view...`);
+  try {
+    const feedRes = await client.query('SELECT COUNT(*) as count FROM "Analytics".descriptive_live_event_feed');
+    console.log(`  🟢 Live event feed view validation: PASSED (View is queryable, currently ${feedRes.rows[0].count} active triggers for today)`);
+  } catch (err) {
+    console.log(`  🔴 Live event feed view validation: FAILED (Error querying view: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 7c: Simulation History table validation
+  console.log(`\nValidating Analytics.simulation_history table...`);
+  try {
+    const histRes = await client.query('SELECT COUNT(*) as count FROM "Analytics".simulation_history');
+    console.log(`  🟢 Simulation history table validation: PASSED (Table is queryable, holds ${histRes.rows[0].count} archived records)`);
+  } catch (err) {
+    console.log(`  🔴 Simulation history table validation: FAILED (Error: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 8: Feature engineering view validation
+  console.log(`\nValidating Analytics.vw_predictive_features view...`);
+  const featQuery = `
+    SELECT COUNT(*) as test_rows
+    FROM "Analytics".vw_predictive_features
+    LIMIT 10;
+  `;
+  try {
+    const featRes = await client.query(featQuery);
+    const testRows = parseInt(featRes.rows[0].test_rows, 10);
+    if (testRows > 0) {
+      console.log(`  🟢 Feature engineering view validation: PASSED (View is queryable)`);
+    } else {
+      console.log(`  🔴 Feature engineering view validation: FAILED (Returned 0 rows)`);
+      allPassed = false;
+    }
+  } catch (err) {
+    console.log(`  🔴 Feature engineering view validation: FAILED (Error: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 8b: Model Auditing view validation
+  console.log(`\nValidating Analytics.descriptive_model_auditing_drift_tracking view...`);
+  try {
+    await client.query('SELECT COUNT(*) FROM "Analytics".descriptive_model_auditing_drift_tracking LIMIT 1');
+    console.log(`  🟢 Model auditing view validation: PASSED (View is queryable and ready to compute prediction errors)`);
+  } catch (err) {
+    console.log(`  🔴 Model auditing view validation: FAILED (Error querying view: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 9: Scenario simulation function validation
+  console.log(`\nValidating Analytics.simulate_scenario function...`);
+  const simQuery = `
+    SELECT * FROM "Analytics".simulate_scenario('Katipunan', 1, '17:00', 'entry', 0.8, 1.0, 0.0, 1000);
+  `;
+  try {
+    const simRes = await client.query(simQuery);
+    if (simRes.rows.length > 0) {
+      const row = simRes.rows[0];
+      const base = parseFloat(row.baseline_mean_forecast);
+      const peak = parseFloat(row.simulated_forecasted_peak);
+      const variance = parseFloat(row.forecasted_peak_variance);
+      const threat = row.simulated_threat_level;
+      
+      // Math check: base = 1000, academic = 1.0 (surge), weather = 0.8 (rain)
+      // Adjustment = (0.30 * 1.0) - (0.175 * 0.8) = 0.30 - 0.14 = +0.16 (16%)
+      // Peak = 1000 * 1.16 = 1160
+      // Variance = +16.00%
+      if (base === 1000 && peak === 1160 && variance === 16.00) {
+        console.log(`  🟢 Simulation function validation: PASSED (Base: ${base}, Peak: ${peak}, Variance: ${variance}%, Threat: ${threat})`);
+      } else {
+        console.log(`  🔴 Simulation function validation: FAILED (Math check mismatch! Expected base 1000/peak 1160/variance 16%, got: base ${base}/peak ${peak}/variance ${variance}%)`);
+        allPassed = false;
+      }
+    } else {
+      console.log(`  🔴 Simulation function validation: FAILED (Returned 0 rows)`);
+      allPassed = false;
+    }
+  } catch (err) {
+    console.log(`  🔴 Simulation function validation: FAILED (Error: ${err.message})`);
+    allPassed = false;
+  }
+
+  // Check 10: Multi-horizon views query validation
+  console.log(`\nValidating Analytics multi-horizon views...`);
+  const horizonViews = [
+    'predictive_passenger_volume_forecast_24h',
+    'predictive_passenger_volume_forecast_1w',
+    'predictive_passenger_volume_forecast_1m',
+    'predictive_passenger_volume_forecast_quarterly',
+    'predictive_passenger_volume_forecast_1y'
+  ];
+  for (const view of horizonViews) {
+    try {
+      const hRes = await client.query(`SELECT COUNT(*) as count FROM "Analytics".${view}`);
+      console.log(`  🟢 View "Analytics".${view} query: PASSED (${hRes.rows[0].count} rows)`);
+    } catch (err) {
+      console.log(`  🔴 View "Analytics".${view} query: FAILED (Error: ${err.message})`);
+      allPassed = false;
+    }
+  }
+
+  // Check 11: Prescriptive Tier verification (APTA Schema Integration)
+  console.log(`\nValidating Analytics prescriptive layer (APTA Schema)...`);
+  try {
+    const capRes = await client.query('SELECT COUNT(*) as count FROM "Analytics".prescriptive_station_capacities');
+    const capCount = parseInt(capRes.rows[0].count, 10);
+    
+    const protoRes = await client.query('SELECT COUNT(*) as count FROM "APTA".apta_protocols');
+    const protoCount = parseInt(protoRes.rows[0].count, 10);
+
+    const auditRes = await client.query('SELECT symbolic_heuristic_compliance_rate_scr as scr FROM "Analytics".prescriptive_compliance_audit');
+    const scrValue = parseFloat(auditRes.rows[0].scr);
+
+    // Verify deployments schema has latency fields
+    const columnsRes = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_schema = 'Analytics' AND table_name = 'prescriptive_protocol_deployments'
+    `);
+    const cols = columnsRes.rows.map(r => r.column_name);
+    const hasThrottling = cols.includes('turnstile_throttling_rate');
+    const hasLatencyFields = cols.includes('ingestion_timestamp') && cols.includes('broadcast_timestamp');
+
+    const recQuery = `
+      SELECT decision_action, capacity_utilization
+      FROM "Analytics".prescriptive_action_recommendations
+      WHERE station_name = 'Legarda' AND flow_type = 'exit' AND date = '2026-11-18' AND time = '04:00'
+    `;
+    const recRes = await client.query(recQuery);
+    
+    let stepPassed = true;
+    if (capCount !== 13) {
+      console.log(`  🔴 FAILED: Expected 13 capacities, got ${capCount}`);
+      stepPassed = false;
+    }
+    if (protoCount < 6) {
+      console.log(`  🔴 FAILED: Expected at least 6 valid protocols in APTA schema, got ${protoCount}`);
+      stepPassed = false;
+    }
+    if (scrValue !== 100.0) {
+      console.log(`  🔴 FAILED: Expected SCR of 100.0 (empty log default), got ${scrValue}`);
+      stepPassed = false;
+    }
+    if (hasThrottling) {
+      console.log(`  🔴 FAILED: prescriptive_protocol_deployments still has turnstile_throttling_rate column`);
+      stepPassed = false;
+    }
+    if (!hasLatencyFields) {
+      console.log(`  🔴 FAILED: prescriptive_protocol_deployments is missing ingestion_timestamp or broadcast_timestamp`);
+      stepPassed = false;
+    }
+    if (recRes.rows.length === 0) {
+      console.log(`  🔴 FAILED: Active recommendation not found for Legarda on 2026-11-18`);
+      stepPassed = false;
+    } else {
+      const rec = recRes.rows[0];
+      if (rec.decision_action !== 'APTA-02') {
+        console.log(`  🔴 FAILED: Mismatch in recommendation! Expected 'APTA-02', got '${rec.decision_action}'`);
+        stepPassed = false;
+      }
+    }
+
+    if (stepPassed) {
+      console.log(`  🟢 Prescriptive validation: PASSED (Capacities: ${capCount}, APTA Protocols: ${protoCount}, Default SCR: ${scrValue}%)`);
+    } else {
+      allPassed = false;
+    }
+  } catch (err) {
+    console.log(`  🔴 Prescriptive validation: FAILED (Error: ${err.message})`);
+    allPassed = false;
+  }
+
   console.log('\n============================================================');
   if (allPassed) {
     console.log('🏆 PIPELINE INTEGRITY CHECK PASSED WITH 100% SUCCESS!');
@@ -274,7 +500,16 @@ async function main() {
     // 6. Expand student transactions
     await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'expand_student_transactions.sql'));
 
-    // 4. Run verification
+    // 7. Generate Descriptive Analytics Layer (New Analytics Step)
+    await runSQLFile(client, path.join(__dirname, 'Analytics Layer', 'descriptive', 'generate_descriptive_analytics.sql'));
+
+    // 8. Generate Predictive Analytics Layer (New Analytics Step)
+    await runSQLFile(client, path.join(__dirname, 'Analytics Layer', 'predictive', 'generate_predictive_analytics.sql'));
+
+    // 8b. Generate Prescriptive Analytics Layer (New Prescriptive Step)
+    await runSQLFile(client, path.join(__dirname, 'Analytics Layer', 'prescriptive', 'generate_prescriptive_analytics.sql'));
+
+    // 9. Run verification
     await verifyIntegrity(client);
 
   } catch (error) {

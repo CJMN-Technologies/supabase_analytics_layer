@@ -20,11 +20,56 @@ CREATE TABLE IF NOT EXISTS external.events_consolidated (
     normalized_score numeric NOT NULL DEFAULT 0.0,
     -- Raw literature weight from friction_weight for traceability
     friction_weight_ref numeric NOT NULL DEFAULT 0.0,
+    announcement_time timestamp with time zone NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
 );
 
+ALTER TABLE external.events_consolidated ADD COLUMN IF NOT EXISTS announcement_time timestamp with time zone NULL;
+
 CREATE INDEX IF NOT EXISTS idx_events_consolidated_lookup
 ON external.events_consolidated (station, event_date, event_category);
+
+-- 1ad. Station Name Normalization Function to match unpivoted ridership conventions
+CREATE OR REPLACE FUNCTION external.normalize_station_name(p_station text)
+RETURNS text AS $$
+DECLARE
+    v_clean text;
+BEGIN
+    v_clean := UPPER(TRIM(COALESCE(p_station, 'All Stations')));
+    
+    IF v_clean IN ('ALL', 'ALL STATIONS', 'ALL STATION', '') THEN
+        RETURN 'All Stations';
+    ELSIF v_clean IN ('RECTO') THEN
+        RETURN 'Recto';
+    ELSIF v_clean IN ('LEGARDA') THEN
+        RETURN 'Legarda';
+    ELSIF v_clean IN ('PUREZA') THEN
+        RETURN 'Pureza';
+    ELSIF v_clean IN ('V. MAPA', 'VMAPA', 'V MAPA') THEN
+        RETURN 'V. Mapa';
+    ELSIF v_clean IN ('J. RUIZ', 'JRUIZ', 'J RUIZ') THEN
+        RETURN 'J. Ruiz';
+    ELSIF v_clean IN ('GILMORE') THEN
+        RETURN 'Gilmore';
+    ELSIF v_clean IN ('BETTY GO-BELMONTE', 'BETTY GO BELMONTE', 'BETTY GO') THEN
+        RETURN 'Betty Go-Belmonte';
+    ELSIF v_clean IN ('ARANETA CENTER-CUBAO', 'ARANETA CENTER CUBAO', 'ARANETA', 'CUBAO') THEN
+        RETURN 'Araneta Center Cubao';
+    ELSIF v_clean IN ('ANONAS') THEN
+        RETURN 'Anonas';
+    ELSIF v_clean IN ('KATIPUNAN') THEN
+        RETURN 'Katipunan';
+    ELSIF v_clean IN ('SANTOLAN') THEN
+        RETURN 'Santolan';
+    ELSIF v_clean IN ('MARIKINA-PASIG', 'MARIKINA PASIG', 'MARIKINA') THEN
+        RETURN 'Marikina-Pasig';
+    ELSIF v_clean IN ('ANTIPOLO') THEN
+        RETURN 'Antipolo';
+    ELSE
+        RETURN INITCAP(p_station);
+    END IF;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
 
 -- 1b. Keyword-based event classifier function (CASE-INSENSITIVE)
 CREATE OR REPLACE FUNCTION external.classify_event_from_text(
@@ -159,11 +204,11 @@ BEGIN
     INSERT INTO external.events_consolidated (
         id, station, event_date, source_table, source_id, source_name,
         event_name, event_category, friction_domain, trigger_category,
-        normalized_score, friction_weight_ref, updated_at
+        normalized_score, friction_weight_ref, announcement_time, updated_at
     )
     VALUES (
         v_scrape_id,
-        COALESCE(NEW.station, 'All Stations'),
+        external.normalize_station_name(COALESCE(NEW.station, 'All Stations')),
         v_event_date,
         'academic_lgu_events',
         NEW.id,
@@ -177,6 +222,7 @@ BEGIN
             ELSE v_weight
         END,
         v_weight,
+        NEW.post_date,
         now()
     )
     ON CONFLICT (id) DO UPDATE SET
@@ -189,6 +235,7 @@ BEGIN
         trigger_category = EXCLUDED.trigger_category,
         normalized_score = EXCLUDED.normalized_score,
         friction_weight_ref = EXCLUDED.friction_weight_ref,
+        announcement_time = EXCLUDED.announcement_time,
         updated_at = now();
 
     RETURN NEW;
@@ -352,11 +399,11 @@ BEGIN
         INSERT INTO external.events_consolidated (
             id, station, event_date, source_table, source_id, source_name,
             event_name, event_category, friction_domain, trigger_category,
-            normalized_score, friction_weight_ref, updated_at
+            normalized_score, friction_weight_ref, announcement_time, updated_at
         )
         VALUES (
             v_consolidated_id,
-            COALESCE(v_row.station, 'All Stations'),
+            external.normalize_station_name(COALESCE(v_row.station, 'All Stations')),
             v_event_date,
             p_table_name,
             COALESCE(v_row.id, 'row-' || v_count),
@@ -370,6 +417,7 @@ BEGIN
                 ELSE v_weight
             END,
             v_weight,
+            NULL,
             now()
         )
         ON CONFLICT (id) DO UPDATE SET
@@ -382,6 +430,7 @@ BEGIN
             trigger_category = EXCLUDED.trigger_category,
             normalized_score = EXCLUDED.normalized_score,
             friction_weight_ref = EXCLUDED.friction_weight_ref,
+            announcement_time = EXCLUDED.announcement_time,
             updated_at = now();
 
         v_count := v_count + 1;
