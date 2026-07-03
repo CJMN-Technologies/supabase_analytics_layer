@@ -1,0 +1,50 @@
+name: LRT2 Automated Ingestion & Forecasting
+
+on:
+  schedule:
+    # Run once every hour to stay well within the GitHub Actions 2,000-minute free tier limits for private repos
+    - cron: '0 * * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub web UI
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm' # Speeds up execution by caching npm packages (abides by free tier limits)
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Speeds up execution by caching python packages
+
+      - name: Install Node Dependencies
+        run: npm ci
+
+      - name: Install Python Dependencies
+        run: pip install pandas numpy xgboost scikit-learn psycopg2-binary dotenv
+
+      - name: Run Web Scraper & Ingestion
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: node run_pipeline.js
+
+      # Run model training & baseline forecast calculation once a day at 12:00 AM UTC (08:00 AM Manila Time)
+      - name: Run ML Training & Forecast
+        if: github.event.schedule == '0 0 * * *' || github.event_name == 'workflow_dispatch'
+        env:
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: python "Analytics Layer/model training, testing and validation/train_and_validate.py"
