@@ -30,8 +30,11 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 │   │   ├── consolidate_events_schema.sql      # Text classification & scraped events sync
 │   │   ├── consolidate_weather_schema.sql     # Pagasa weather alert parsing & current/forecast weather sync
 │   │   └── standardize_external_triggers.sql  # Compiles classifiers and A_sw/PAGASA triggers
-│   └── literature/
-│       └── standardize_literature_dimensions.sql # Sets up APTA tables and seeds weights
+│   ├── literature/
+│   │   └── standardize_literature_dimensions.sql # Sets up APTA tables and seeds weights
+│   └── applications/
+│       ├── iam_portal_schema.sql              # User profiles, administrative logs, and custom RBAC DDL
+│       └── ground_control_schema.sql          # Mobile shifts, incidents, emergency contacts, and real-time sync triggers
 ├── run_pipeline.js                            # Core orchestration runner and data integrity check suite
 ├── package.json                               # Node dependencies (pg, @supabase/supabase-js)
 ├── .env.example                               # Template for database credentials
@@ -47,20 +50,45 @@ All lookups have been standardized to clean, human-readable primary keys instead
 - `APTA.apta_protocols` (IDs: `APTA-01`, `APTA-02`, ...)
 - `PSOR.psor_incidents` (IDs: `PSOR-01`, `PSOR-02`, ...)
 - `"Station Capacity".station_platform_capacity` (IDs: `CAP-REC` for Recto, `CAP-LEG` for Legarda, ...)
-- `external.friction_weight` (IDs: `FRI-ACxx` for Academic Surge, `FRI-PAxx` for Weather Alerts)
+- `external.friction_weight` (IDs: `FRI-ACxx` for Academic Surge, `FRI-PAxx` for Weather Alerts, `FRI-OPxx` for GCS Incidents)
+
+### 3ab. Standardized Application IDs
+All application-level keys have been migrated from raw UUID hashes to sequence-based standardized string formats for direct readability:
+- **`iam.users`:** `POxxxx` (Provision Officer), `CCOxxxx` (Command Center Officer), and `GCSxxxx` (Ground Control Staff).
+- **`iam.audit_logs`:** `AUDxxxxxx` (Audit Logs).
+- **`gcs.shifts`:** `SHFxxxxxx` (Ground Shifts).
+- **`gcs.incidents`:** `INCxxxxxx` (Logged Incidents).
+- **`gcs.emergency_contacts`:** `CONxxxx` (Emergency Contacts).
+- **`Analytics.simulation_history`:** `SIMxxxxxx` (Stress Simulations).
+- **`Analytics.prescriptive_protocol_deployments`:** `DEPxxxxxx` (APTA Deployments).
 
 ### 3b. Real-Time Consolidated Tables
 Triggers process qualitative logs on-write and save them under short, unique IDs:
 - **Events Consolidated (`external.events_consolidated`):**
   - Scraped events: `SCR-[CATEGORY_CODE]-[MMDD]-[RAW_ID]`
   - Calendar events: `CAL-[SCHOOL_ACRONYM]-[MMDD]-[ROW_ID]`
+  - GCS Mobile Incidents: `INC-[MMDD]-[INCIDENT_ID]`
   - Auto-normalizes class suspension events to binary score `1.0` (Step 3c).
   - Automatically deduplicates and updates existing rows `ON CONFLICT (id) DO UPDATE` to prevent data duplication.
 - **Weather Consolidated (`external.weather_consolidated`):**
   - Weather Current: `WTH-CUR-[STATION]`
   - Weather Forecasts: `WTH-FCT-[ID]`
 
-### 3c. Dynamic Proportional Ingestion
+### 3c. Application Schemas & Real-Time Sync Triggers
+We support three personas (Provision Officers `PO`, Command Center Officers `CCO`, Ground Control Staff `GCS`) across two applications:
+- **I.A.M Portal (`iam` Schema):**
+  - `iam.users` manages system directories, unique security activation keys, and profile URLs linking to the `personnel-images` Supabase storage bucket.
+  - `iam.audit_logs` tracks Provision Officer administrative actions (user provisioning, active status toggles) for audit compliance.
+  - **Self-Binding & Profile Updates (`user_update_profile`):** Restricts anonymous visibility of registered user accounts and allows authenticated staff members to self-bind their authenticated user IDs (`auth_user_id = auth.uid()`) upon entering their unique `security_key` and update profile fields.
+- **Ground Control System (`gcs` Schema):**
+  - `gcs.shifts` maps GCS personnel shift jurisdiction assignments to specific LRT-2 stations.
+  - `gcs.incidents` logs crowd, platform, sanitation, concourse, or emergency events reported from mobile devices. The `incident_type` is controlled via a custom PostgreSQL Enum (`gcs.incident_category`) aligned with the PSOR schema categories + `'Other'`. Severity is restricted to `'Critical'` and `'Warning'`.
+  - `gcs.emergency_contacts` seeds and hosts dynamic dialer hotlines for mobile clients.
+  - **Real-Time Sync Trigger (`tg_sync_gcs_incidents`):** Maps GCS incidents into `external.events_consolidated` as `'operational'` friction domain events. If the type is `'Other'`, the trigger captures their custom description and formats the event name as `'Other: <description> (<severity>)'`.
+  - **Automatic Resolution Timestamp (`tg_set_resolved_timestamp`):** Automatically populates `resolved_at = now()` when an incident status is set to `'resolved'`, and clears it if reopened.
+  - **Automatic Resolution Cleanup:** Setting an incident status to `'resolved'` or deleting the row immediately purges the record from the events feed in real-time.
+
+### 3d. Dynamic Proportional Ingestion
 Ridership tables (`ridership_2021` to `ridership_2025` and incoming future tables) are transformed from non-standard daily/off-peak bands into a continuous hourly scale:
 - Auto-renames incoming source tables to `*_backup` to preserve data lineage.
 - Scans and maps station columns dynamically, ignoring garbage or dummy columns.
@@ -98,12 +126,12 @@ node run_pipeline.js
 
 ### 5a. Descriptive Analytics
 *   **Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Pre-computes 80th (Warning) and 90th (Critical) percentiles for every station, day of week, hour period, and flow direction (3,172 baseline records).
-*   **Historical Capacity Benchmarking (`public.descriptive_historical_capacity_benchmarking`):** Calculates the live Commuter Friction Index (CFI) by combining weather, academic, and civic trigger weights (35% / 20% / 45%).
+*   **Historical Capacity Benchmarking (`public.descriptive_historical_capacity_benchmarking`):** Calculates the live Commuter Friction Index (CFI) by combining weather, academic, civic, and operational trigger weights (25% / 15% / 35% / 25%).
 
 ### 5b. Predictive Analytics (ML Integration & What-If Simulator)
 *   **Model Predictions (`Analytics.predictive_model_outputs`):** Decoupled storage landing table for external ML model runner predictions ($B_m$).
 *   **Model Performance (`Analytics.predictive_model_performance`):** Logs XGBoost MAPE/RMSE and RandomForest accuracy/recall.
-*   **Dynamic Volume Adjuster (`Analytics.vw_predictive_metrics`):** Queries a rolling 366-day calendar CTE starting from `CURRENT_DATE`, dynamically joining baseline and consolidations to scale volume forecasts on-the-fly. Automatically falls back to historical medians ($P_{50}$) if model outputs are not yet populated.
+*   **Dynamic Volume Adjuster (`Analytics.vw_predictive_metrics`):** Queries a rolling 366-day calendar CTE starting from `CURRENT_DATE`, dynamically scaling forecasts based on weather (-17.5%), academic (+30%), civic (-45%), and GCS operational standstills (-30%) shocks. Falls back to historical medians ($P_{50}$) if model outputs are not yet populated.
 *   **What-If Simulator (`"Analytics".predictive_what_if_scenario_simulator`):** Analytics wrapper function to test hypothetical triggers and calculate peak variance and threat levels in under 5ms:
     ```sql
     SELECT * FROM "Analytics".predictive_what_if_scenario_simulator('Katipunan', 1, '17:00', 'entry', 0.8, 1.0, 0.0, 1000);
@@ -119,8 +147,8 @@ Exposed in the `"Analytics"` schema for direct REST API client queries:
 *   `"Analytics".predictive_passenger_volume_forecast_1m` (Daily rollup for 30 days)
 *   `"Analytics".predictive_passenger_volume_forecast_quarterly` (Monthly rollup by Quarter)
 *   `"Analytics".predictive_passenger_volume_forecast_1y` (Monthly rollup for 12 months)
-*   `"Analytics".prescriptive_active_checklists` (Actionable checklists mapping tactical steps to 'Command Center Officer' or 'Ground Control Staff' roles).
-*   `"Analytics".prescriptive_action_recommendations` (Actionable risk directives resolved directly to APTA protocol IDs `'APTA-01'` through `'APTA-06'`).
+*   `"Analytics".prescriptive_active_checklists` (Actionable checklists mapping tactical steps to 'Command Center Officer' or 'Ground Control Staff' roles, compiling the union of tactics from all parallel recommendations).
+*   `"Analytics".prescriptive_action_recommendations` (Actionable risk directives mapping to APTA protocol IDs `'APTA-01'` through `'APTA-06'`. Uses `UNNEST` on arrays to recommend multiple protocols simultaneously when thresholds are crossed).
 
 ### 5d. Model Training & Testing Pipeline
 The model training, testing, and validation pipeline partitions turnstile data chronologically (80% training / 20% test) and runs performance checks against the four operational benchmarks:

@@ -208,7 +208,9 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
         ["External", "external/", "consolidate_weather_schema.sql", "Creates consolidated weather table and current/forecast syncs."],
         ["External", "external/", "consolidate_events_schema.sql", "Creates consolidated events table and calendar processor."],
         ["External", "external/", "standardize_external_triggers.sql", "Compiles classifiers, weather formulas, and A_sw triggers."],
-        ["Literature", "literature/", "standardize_literature_dimensions.sql", "Sets up APTA tables and seeds literature friction weights."]
+        ["Literature", "literature/", "standardize_literature_dimensions.sql", "Sets up APTA tables and seeds literature friction weights."],
+        ["Applications", "applications/", "iam_portal_schema.sql", "User profiles, administrative logs, and custom RBAC DDL."],
+        ["Applications", "applications/", "ground_control_schema.sql", "Mobile shifts, incidents, emergency contacts, and real-time triggers."]
     ]
 
     t = Table(data, colWidths=[65, 60, 160, 215])
@@ -297,6 +299,22 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
     ))
     story.append(Paragraph(
         "8. <b>Academic Start/Enrollment</b>: Identifies orientation and enrollment weeks, categorized as `regular_class_day`.",
+        list_style
+    ))
+    story.append(Paragraph(
+        "9. <b>Timezone-Aware Event Date Extraction & Relative Offsets</b>:<br/>"
+        "To resolve timezone differences (such as a post at July 1 23:16 UTC being cast as July 1 instead of July 2 PHT) and capture future "
+        "alert targets, `extract_event_date_from_text` parses explicit dates (e.g. 'July 2, 2026') from text using POSIX case-insensitive "
+        "regex patterns with <code>\\y</code> word boundaries. If no date matches, it scans for relative tomorrow indicators ('tomorrow', 'bukas') "
+        "to apply a <code>+1 day</code> offset, falling back to Manila Time <code>(post_date AT TIME ZONE 'Asia/Manila')::date</code>.",
+        list_style
+    ))
+    story.append(Paragraph(
+        "10. <b>City-to-Station Mapping & Parent City Propagation</b>:<br/>"
+        "If a scraper announcement text mentions an affected place/city (Manila, San Juan, Quezon City, Pasig, Marikina, Antipolo) rather than a station, "
+        "or if a school/LGU source located in a city makes an announcement linked to a specific station, the event is automatically propagated to "
+        "affect <i>all constituent stations</i> in that same city group (e.g., a suspension linked to Recto automatically creates consolidated event entries "
+        "for Recto, Legarda, Pureza, and V. Mapa). This ensures regional coherence in commuter friction modeling.",
         list_style
     ))
 
@@ -502,8 +520,10 @@ def build_pdf(filename="Transformation Layer/Transformation_Layer_Documentation.
         ["2", "internal/standardize_internal_dimensions.sql", "Internal", "Resets PSOR and Station Capacity dimensions."],
         ["3", "literature/standardize_literature_dimensions.sql", "Literature", "Resets APTA and seeds friction weights references."],
         ["4", "external/standardize_external_triggers.sql", "External", "Deploys classifiers, weather formulas, and triggers."],
-        ["5", "internal/transform_ridership_hourly.sql", "Internal", "Converts backups to hourly active ridership tables."],
-        ["6", "internal/expand_student_transactions.sql", "Internal", "Expands student transaction summaries to hourly data."]
+        ["5", "applications/iam_portal_schema.sql", "Applications", "Creates user directory, auth link, and RBAC policies."],
+        ["6", "applications/ground_control_schema.sql", "Applications", "Creates shifts, incidents, contacts, and sync triggers."],
+        ["7", "internal/transform_ridership_hourly.sql", "Internal", "Converts backups to hourly active ridership tables."],
+        ["8", "internal/expand_student_transactions.sql", "Internal", "Expands student transaction summaries to hourly data."]
     ]
     
     ptable = Table(pipeline_data, colWidths=[40, 180, 70, 210])

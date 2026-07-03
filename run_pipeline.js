@@ -433,9 +433,9 @@ async function verifyIntegrity(client) {
       console.log(`  🔴 FAILED: Active recommendation not found for Legarda on 2026-11-18`);
       stepPassed = false;
     } else {
-      const rec = recRes.rows[0];
-      if (rec.decision_action !== 'APTA-02') {
-        console.log(`  🔴 FAILED: Mismatch in recommendation! Expected 'APTA-02', got '${rec.decision_action}'`);
+      const actions = recRes.rows.map(r => r.decision_action);
+      if (!actions.includes('APTA-02')) {
+        console.log(`  🔴 FAILED: Mismatch in recommendation! Expected list to contain 'APTA-02', got: ${JSON.stringify(actions)}`);
         stepPassed = false;
       }
     }
@@ -462,8 +462,41 @@ async function verifyIntegrity(client) {
 async function main() {
   loadEnv();
 
+  let dbHost = process.env.DB_HOST;
+  if (!process.env.DATABASE_URL && dbHost) {
+    console.log(`🔍 Resolving database host ${dbHost} to IPv4 first...`);
+    try {
+      const address = await new Promise((resolve, reject) => {
+        dns.resolve4(dbHost, (err, addresses) => {
+          if (err) reject(err);
+          else if (!addresses || addresses.length === 0) reject(new Error('No addresses found'));
+          else resolve(addresses[0]);
+        });
+      });
+      console.log(`✅ Resolved to IPv4 (resolve4): ${address}`);
+      dbHost = address;
+    } catch (err) {
+      console.warn(`⚠️ DNS resolve4 failed: ${err.message}. Trying dns.lookup...`);
+      try {
+        const address = await new Promise((resolve, reject) => {
+          dns.lookup(dbHost, { family: 4 }, (err, addr) => {
+            if (err) reject(err);
+            else resolve(addr);
+          });
+        });
+        console.log(`✅ Resolved to IPv4 (lookup): ${address}`);
+        dbHost = address;
+      } catch (err2) {
+        console.warn(`⚠️ DNS lookup failed: ${err2.message}. Utilizing known Singapore Supabase IPv4 fallback: 3.0.129.213`);
+        if (dbHost === 'db.kthioobzfyepokrrykem.supabase.co') {
+          dbHost = '3.0.129.213';
+        }
+      }
+    }
+  }
+
   const connectionString = process.env.DATABASE_URL || {
-    host: process.env.DB_HOST,
+    host: dbHost,
     port: parseInt(process.env.DB_PORT || '5432', 10),
     database: process.env.DB_NAME || 'postgres',
     user: process.env.DB_USER || 'postgres',
@@ -493,6 +526,11 @@ async function main() {
 
     // 4. Standardize external triggers
     await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'external', 'standardize_external_triggers.sql'));
+
+    // 4b. Deploy Application Schemas (IAM Portal & Ground Control)
+    console.log('🚀 Deploying IAM Portal & Ground Control Application Schemas...');
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'applications', 'iam_portal_schema.sql'));
+    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'applications', 'ground_control_schema.sql'));
 
     // 5. Transform 5-year data to hourly
     await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'transform_ridership_hourly.sql'));

@@ -115,7 +115,8 @@ hourly_events AS (
           ELSE 0.0
         END
       ), 0.0
-    ) as civic_mandate_score
+    ) as civic_mandate_score,
+    COALESCE(MAX(CASE WHEN ec.friction_domain = 'operational' THEN ec.normalized_score END), 0.0) as operational_score
   FROM (
     SELECT DISTINCT event_date FROM external.events_consolidated
   ) d
@@ -143,10 +144,12 @@ SELECT
   COALESCE(w.weather_score, 0.0) as weather_score,
   COALESCE(e.academic_surge_score, 0.0) as academic_surge_score,
   COALESCE(e.civic_mandate_score, 0.0) as civic_mandate_score,
+  COALESCE(e.operational_score, 0.0) as operational_score,
   ROUND(
-    (0.35 * COALESCE(w.weather_score, 0.0)) + 
-    (0.20 * COALESCE(e.academic_surge_score, 0.0)) + 
-    (0.45 * COALESCE(e.civic_mandate_score, 0.0)),
+    (0.25 * COALESCE(w.weather_score, 0.0)) + 
+    (0.15 * COALESCE(e.academic_surge_score, 0.0)) + 
+    (0.35 * COALESCE(e.civic_mandate_score, 0.0)) +
+    (0.25 * COALESCE(e.operational_score, 0.0)),
     4
   ) as cfi
 FROM combined_hourly ch
@@ -175,10 +178,12 @@ SELECT
   COALESCE(w.weather_score, 0.0) as weather_score,
   COALESCE(e.academic_surge_score, 0.0) as academic_surge_score,
   COALESCE(e.civic_mandate_score, 0.0) as civic_mandate_score,
+  COALESCE(e.operational_score, 0.0) as operational_score,
   ROUND(
-    (0.35 * COALESCE(w.weather_score, 0.0)) + 
-    (0.20 * COALESCE(e.academic_surge_score, 0.0)) + 
-    (0.45 * COALESCE(e.civic_mandate_score, 0.0)),
+    (0.25 * COALESCE(w.weather_score, 0.0)) + 
+    (0.15 * COALESCE(e.academic_surge_score, 0.0)) + 
+    (0.35 * COALESCE(e.civic_mandate_score, 0.0)) +
+    (0.25 * COALESCE(e.operational_score, 0.0)),
     4
   ) as cfi,
   -- Post-processing dynamic adjustment
@@ -186,23 +191,33 @@ SELECT
     COALESCE(mo.baseline_mean_forecast, tb.median_volume, 0.0)::numeric * 
     (1.0 + (0.30 * COALESCE(e.academic_surge_score, 0.0)) 
          - (0.45 * COALESCE(e.civic_mandate_score, 0.0)) 
-         - (0.175 * COALESCE(w.weather_score, 0.0)))
+         - (0.175 * COALESCE(w.weather_score, 0.0))
+         - (0.30 * COALESCE(e.operational_score, 0.0)))
   )::integer as adjusted_forecast_volume,
   tb.warning_threshold,
   tb.critical_threshold,
   -- Predicted threat level classification
   CASE 
+    -- If CFI is extremely high, classify as Emergency (e.g. active standstills or severe delays)
+    WHEN (
+      (0.25 * COALESCE(w.weather_score, 0.0)) + 
+      (0.15 * COALESCE(e.academic_surge_score, 0.0)) + 
+      (0.35 * COALESCE(e.civic_mandate_score, 0.0)) +
+      (0.25 * COALESCE(e.operational_score, 0.0))
+    ) > 0.85 THEN 'Emergency'
     WHEN ROUND(
       COALESCE(mo.baseline_mean_forecast, tb.median_volume, 0.0)::numeric * 
       (1.0 + (0.30 * COALESCE(e.academic_surge_score, 0.0)) 
            - (0.45 * COALESCE(e.civic_mandate_score, 0.0)) 
-           - (0.175 * COALESCE(w.weather_score, 0.0)))
+           - (0.175 * COALESCE(w.weather_score, 0.0))
+           - (0.30 * COALESCE(e.operational_score, 0.0)))
     ) >= tb.critical_threshold THEN 'Critical'
     WHEN ROUND(
       COALESCE(mo.baseline_mean_forecast, tb.median_volume, 0.0)::numeric * 
       (1.0 + (0.30 * COALESCE(e.academic_surge_score, 0.0)) 
            - (0.45 * COALESCE(e.civic_mandate_score, 0.0)) 
-           - (0.175 * COALESCE(w.weather_score, 0.0)))
+           - (0.175 * COALESCE(w.weather_score, 0.0))
+           - (0.30 * COALESCE(e.operational_score, 0.0)))
     ) >= tb.warning_threshold THEN 'Warning'
     ELSE 'Normal'
   END as predicted_threat_level
@@ -248,7 +263,8 @@ LEFT JOIN (
           ELSE 0.0
         END
       ), 0.0
-    ) as civic_mandate_score
+    ) as civic_mandate_score,
+    COALESCE(MAX(CASE WHEN ec.friction_domain = 'operational' THEN ec.normalized_score END), 0.0) as operational_score
   FROM (
     SELECT DISTINCT event_date FROM external.events_consolidated
   ) d
@@ -287,6 +303,7 @@ SELECT
   weather_score,
   academic_surge_score,
   civic_mandate_score,
+  operational_score,
   cfi,
   warning_threshold,
   critical_threshold,
@@ -627,6 +644,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 12. Heuristic Decision Tree Mapping / Prescriptive Guidelines lookup
+DROP VIEW IF EXISTS "Analytics".prescriptive_tactical_interventions CASCADE;
 CREATE OR REPLACE VIEW "Analytics".prescriptive_tactical_interventions AS
 SELECT 
   'Normal'::text as threat_level,

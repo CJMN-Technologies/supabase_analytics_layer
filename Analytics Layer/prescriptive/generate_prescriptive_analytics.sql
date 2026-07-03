@@ -39,8 +39,11 @@ VALUES
 
 -- 2. Create Protocol Deployment Auditing Table (UAT Metrics Input)
 -- References the official APTA schema table directly for validation
+CREATE SEQUENCE IF NOT EXISTS "Analytics".seq_protocol_deployments START WITH 1;
+
+DROP TABLE IF EXISTS "Analytics".prescriptive_protocol_deployments CASCADE;
 CREATE TABLE "Analytics".prescriptive_protocol_deployments (
-    deployment_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    deployment_id text PRIMARY KEY DEFAULT ('DEP' || LPAD(nextval('"Analytics".seq_protocol_deployments')::text, 6, '0')),
     station_name text NOT NULL,
     flow_type text NOT NULL,
     decision_action text NOT NULL REFERENCES "APTA".apta_protocols(id),
@@ -77,16 +80,24 @@ SELECT
     WHEN fc.civic_mandate_score > 0.0 AND fc.civic_mandate_score >= fc.weather_score AND fc.civic_mandate_score >= fc.academic_surge_score THEN 'Civic'
     ELSE 'General'
   END as primary_trigger_context,
-  -- Heuristic Decision Tree Terminal Nodes mapped to APTA Protocol IDs
-  CASE 
-    WHEN fc.predicted_threat_level = 'Normal' THEN 'APTA-03' -- Recommended Practice for Station Operations (Standard Operations)
-    WHEN fc.predicted_threat_level = 'Warning' AND (fc.adjusted_forecast_volume::numeric / cap.max_safe_platform_capacity) < 0.80 THEN 'APTA-02' -- Security Considerations (Platform Queue Preparation)
-    WHEN fc.predicted_threat_level = 'Warning' AND (fc.adjusted_forecast_volume::numeric / cap.max_safe_platform_capacity) >= 0.80 THEN 'APTA-05' -- Escalator Guidelines (Concourse Crowd Holding)
-    WHEN fc.predicted_threat_level = 'Critical' AND (fc.adjusted_forecast_volume::numeric / cap.max_safe_platform_capacity) < 0.90 THEN 'APTA-04' -- Emergency Operations (Manual Entrance Metering)
-    WHEN fc.predicted_threat_level = 'Critical' AND (fc.adjusted_forecast_volume::numeric / cap.max_safe_platform_capacity) >= 0.90 THEN 'APTA-02' -- Security/Barricades (Pulse Boarding / Human Barricades)
-    WHEN fc.predicted_threat_level = 'Emergency' THEN 'APTA-01' -- Emergency Egress (Evacuation & Shutdown)
-    ELSE 'APTA-03'
-  END::text as decision_action
+  -- Return a row for each recommended protocol
+  UNNEST(
+    CASE 
+      WHEN fc.predicted_threat_level = 'Normal' THEN ARRAY['APTA-03']
+      WHEN fc.predicted_threat_level = 'Warning' THEN 
+        CASE 
+          WHEN (fc.adjusted_forecast_volume::numeric / cap.max_safe_platform_capacity) >= 0.80 THEN ARRAY['APTA-02', 'APTA-05']
+          ELSE ARRAY['APTA-02']
+        END
+      WHEN fc.predicted_threat_level = 'Critical' THEN 
+        CASE 
+          WHEN (fc.adjusted_forecast_volume::numeric / cap.max_safe_platform_capacity) >= 0.90 THEN ARRAY['APTA-04', 'APTA-02']
+          ELSE ARRAY['APTA-04']
+        END
+      WHEN fc.predicted_threat_level = 'Emergency' THEN ARRAY['APTA-01', 'APTA-04']
+      ELSE ARRAY['APTA-03']
+    END
+  )::text as decision_action
 FROM "Analytics".vw_predictive_metrics fc
 JOIN "Analytics".prescriptive_station_capacities cap
   ON cap.station_name = fc.station_name;

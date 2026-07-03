@@ -159,6 +159,164 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
+-- 1b_2. Extract event date from post/image text with timezone safety and relative offset support
+CREATE OR REPLACE FUNCTION external.extract_event_date_from_text(
+    p_post_text text,
+    p_image_text text,
+    p_post_date timestamp with time zone
+) RETURNS date AS $$
+DECLARE
+    v_combined text;
+    v_match text[];
+    v_month text;
+    v_day integer;
+    v_year integer;
+    v_month_num integer;
+    v_fallback date;
+BEGIN
+    -- Fallback is the post_date in Asia/Manila timezone
+    v_fallback := (p_post_date AT TIME ZONE 'Asia/Manila')::date;
+    
+    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, ''));
+    
+    -- Format 1: Month Name followed by Day (e.g., July 2, 2026 or July 2)
+    -- Using \y for word boundaries to prevent matching digits inside years (like matching '20' in '2026' as July 20)
+    v_match := regexp_match(
+        v_combined,
+        '\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?\s+\y(\d{1,2})\y(?:st|nd|rd|th)?(?:,?\s+\y(\d{4})\y)?'
+    );
+    
+    IF v_match IS NULL THEN
+        -- Format 2: Day followed by Month Name (e.g., 02 July 2026 or 2 July)
+        v_match := regexp_match(
+            v_combined,
+            '\y(\d{1,2})\y(?:st|nd|rd|th)?\s+\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?(?:\s+\y(\d{4})\y)?'
+        );
+        IF v_match IS NOT NULL THEN
+            v_month := v_match[2];
+            v_day := v_match[1]::integer;
+            v_year := v_match[3]::integer;
+        END IF;
+    ELSE
+        v_month := v_match[1];
+        v_day := v_match[2]::integer;
+        v_year := v_match[3]::integer;
+    END IF;
+
+    IF v_match IS NOT NULL THEN
+        v_month_num := CASE
+            WHEN v_month IN ('january', 'jan') THEN 1
+            WHEN v_month IN ('february', 'feb') THEN 2
+            WHEN v_month IN ('march', 'mar') THEN 3
+            WHEN v_month IN ('april', 'apr') THEN 4
+            WHEN v_month IN ('may') THEN 5
+            WHEN v_month IN ('june', 'jun') THEN 6
+            WHEN v_month IN ('july', 'jul') THEN 7
+            WHEN v_month IN ('august', 'aug') THEN 8
+            WHEN v_month IN ('september', 'sep') THEN 9
+            WHEN v_month IN ('october', 'oct') THEN 10
+            WHEN v_month IN ('november', 'nov') THEN 11
+            WHEN v_month IN ('december', 'dec') THEN 12
+        END;
+        
+        IF v_year IS NULL THEN
+            v_year := EXTRACT(YEAR FROM v_fallback)::integer;
+        END IF;
+
+        BEGIN
+            RETURN make_date(v_year, v_month_num, v_day);
+        EXCEPTION WHEN OTHERS THEN
+            RETURN v_fallback;
+        END;
+    END IF;
+
+    -- Handle relative tomorrow keywords
+    IF v_combined ~* '\y(tomorrow|bukas)\y' THEN
+        RETURN v_fallback + 1;
+    END IF;
+
+    RETURN v_fallback;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- 1b_3. Resolve affected stations by city/place keywords and source locations
+CREATE OR REPLACE FUNCTION external.get_affected_stations(
+    p_station text,
+    p_post_text text,
+    p_image_text text,
+    p_source_name text
+) RETURNS text[] AS $$
+DECLARE
+    v_combined text;
+    v_stations text[] := ARRAY[]::text[];
+    v_station_normalized text;
+    v_city text := NULL;
+BEGIN
+    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_source_name, ''));
+    v_station_normalized := external.normalize_station_name(p_station);
+
+    -- 1. Check if the source station indicates "All Stations"
+    IF v_station_normalized = 'All Stations' THEN
+        RETURN ARRAY['All Stations'];
+    END IF;
+
+    -- 2. Map source station to city group if present
+    IF v_station_normalized IS NOT NULL AND v_station_normalized != '' THEN
+        IF v_station_normalized IN ('Recto', 'Legarda', 'Pureza', 'V. Mapa') THEN
+            v_city := 'Manila';
+        ELSIF v_station_normalized IN ('J. Ruiz') THEN
+            v_city := 'San Juan';
+        ELSIF v_station_normalized IN ('Gilmore', 'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan') THEN
+            v_city := 'Quezon City';
+        ELSIF v_station_normalized IN ('Santolan', 'Marikina-Pasig') THEN
+            v_city := 'Pasig and Marikina';
+        ELSIF v_station_normalized IN ('Antipolo') THEN
+            v_city := 'Antipolo';
+        END IF;
+    END IF;
+
+    -- 3. Check for place/city keywords in the combined text
+    -- Manila group
+    IF v_city = 'Manila' OR v_combined ~* '\b(manila|recto|legarda|pureza|v\.?\s*mapa)\b' THEN
+        v_stations := v_stations || ARRAY['Recto', 'Legarda', 'Pureza', 'V. Mapa'];
+    END IF;
+
+    -- San Juan group
+    IF v_city = 'San Juan' OR v_combined ~* '\b(san\s+juan|j\.?\s*ruiz)\b' THEN
+        v_stations := v_stations || ARRAY['J. Ruiz'];
+    END IF;
+
+    -- Quezon City group
+    IF v_city = 'Quezon City' OR v_combined ~* '\b(quezon\s+city|qc|gilmore|betty\s+go|araneta|cubao|anonas|katipunan)\b' THEN
+        v_stations := v_stations || ARRAY['Gilmore', 'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan'];
+    END IF;
+
+    -- Pasig and Marikina group
+    IF v_city = 'Pasig and Marikina' OR v_combined ~* '\b(pasig|marikina|santolan)\b' THEN
+        v_stations := v_stations || ARRAY['Santolan', 'Marikina-Pasig'];
+    END IF;
+
+    -- Antipolo group
+    IF v_city = 'Antipolo' OR v_combined ~* '\b(antipolo|rizal)\b' THEN
+        v_stations := v_stations || ARRAY['Antipolo'];
+    END IF;
+
+    -- 4. Deduplicate the stations array
+    IF array_length(v_stations, 1) > 0 THEN
+        SELECT ARRAY(SELECT DISTINCT unnest(v_stations)) INTO v_stations;
+    ELSE
+        -- Default fallback to normalized source station if no city/place keywords matched
+        IF v_station_normalized IS NOT NULL AND v_station_normalized != '' THEN
+            v_stations := ARRAY[v_station_normalized];
+        ELSE
+            v_stations := ARRAY['All Stations'];
+        END IF;
+    END IF;
+
+    RETURN v_stations;
+END;
+$$ LANGUAGE plpgsql STABLE;
+
 -- 1c. Trigger function for academic_lgu_events → events_consolidated
 CREATE OR REPLACE FUNCTION external.sync_academic_lgu_to_events_consolidated()
 RETURNS trigger AS $$
@@ -166,9 +324,10 @@ DECLARE
     v_result RECORD;
     v_weight numeric;
     v_event_date date;
-    v_consolidated_id text;
     v_scrape_id text;
     v_cat_code text;
+    v_stations text[];
+    v_station text;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         DELETE FROM external.events_consolidated WHERE source_id = OLD.id AND source_table = 'academic_lgu_events';
@@ -190,7 +349,7 @@ BEGIN
     LIMIT 1;
     v_weight := COALESCE(v_weight, 0.0);
 
-    v_event_date := COALESCE(NEW.post_date::date, CURRENT_DATE);
+    v_event_date := external.extract_event_date_from_text(NEW.post_text, NEW.image_text, NEW.post_date);
 
     v_cat_code := CASE v_result.event_category
         WHEN 'class_suspension' THEN 'CS'
@@ -199,44 +358,54 @@ BEGIN
         WHEN 'exam_week' THEN 'EX'
         ELSE 'RC'
     END;
-    v_scrape_id := 'SCR-' || v_cat_code || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || NEW.id;
 
-    INSERT INTO external.events_consolidated (
-        id, station, event_date, source_table, source_id, source_name,
-        event_name, event_category, friction_domain, trigger_category,
-        normalized_score, friction_weight_ref, announcement_time, updated_at
-    )
-    VALUES (
-        v_scrape_id,
-        external.normalize_station_name(COALESCE(NEW.station, 'All Stations')),
-        v_event_date,
-        'academic_lgu_events',
-        NEW.id,
-        NEW.source_name,
-        v_result.event_name,
-        v_result.event_category,
-        v_result.friction_domain,
-        v_result.trigger_category,
-        CASE
-            WHEN v_result.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
-            ELSE v_weight
-        END,
-        v_weight,
-        NEW.post_date,
-        now()
-    )
-    ON CONFLICT (id) DO UPDATE SET
-        station = EXCLUDED.station,
-        event_date = EXCLUDED.event_date,
-        source_name = EXCLUDED.source_name,
-        event_name = EXCLUDED.event_name,
-        event_category = EXCLUDED.event_category,
-        friction_domain = EXCLUDED.friction_domain,
-        trigger_category = EXCLUDED.trigger_category,
-        normalized_score = EXCLUDED.normalized_score,
-        friction_weight_ref = EXCLUDED.friction_weight_ref,
-        announcement_time = EXCLUDED.announcement_time,
-        updated_at = now();
+    -- Clear any existing rows for this source_id first to prevent duplicate or stale station assignments on update
+    DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
+
+    -- Resolve the list of stations affected by this event
+    v_stations := external.get_affected_stations(NEW.station, NEW.post_text, NEW.image_text, NEW.source_name);
+
+    -- Loop and insert for each affected station
+    FOREACH v_station IN ARRAY v_stations LOOP
+        v_scrape_id := 'SCR-' || v_cat_code || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || NEW.id || '-' || REPLACE(LOWER(v_station), ' ', '_');
+
+        INSERT INTO external.events_consolidated (
+            id, station, event_date, source_table, source_id, source_name,
+            event_name, event_category, friction_domain, trigger_category,
+            normalized_score, friction_weight_ref, announcement_time, updated_at
+        )
+        VALUES (
+            v_scrape_id,
+            external.normalize_station_name(v_station),
+            v_event_date,
+            'academic_lgu_events',
+            NEW.id,
+            NEW.source_name,
+            v_result.event_name,
+            v_result.event_category,
+            v_result.friction_domain,
+            v_result.trigger_category,
+            CASE
+                WHEN v_result.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
+                ELSE v_weight
+            END,
+            v_weight,
+            NEW.post_date,
+            now()
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            station = EXCLUDED.station,
+            event_date = EXCLUDED.event_date,
+            source_name = EXCLUDED.source_name,
+            event_name = EXCLUDED.event_name,
+            event_category = EXCLUDED.event_category,
+            friction_domain = EXCLUDED.friction_domain,
+            trigger_category = EXCLUDED.trigger_category,
+            normalized_score = EXCLUDED.normalized_score,
+            friction_weight_ref = EXCLUDED.friction_weight_ref,
+            announcement_time = EXCLUDED.announcement_time,
+            updated_at = now();
+    END LOOP;
 
     RETURN NEW;
 END;

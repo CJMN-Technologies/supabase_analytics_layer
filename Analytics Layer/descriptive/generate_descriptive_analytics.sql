@@ -113,7 +113,8 @@ hourly_events AS (
           ELSE 0.0
         END
       ), 0.0
-    ) as civic_mandate_score
+    ) as civic_mandate_score,
+    COALESCE(MAX(CASE WHEN ec.friction_domain = 'operational' THEN ec.normalized_score END), 0.0) as operational_score
   FROM (
     SELECT DISTINCT event_date FROM external.events_consolidated
   ) d
@@ -143,10 +144,12 @@ SELECT
   COALESCE(w.weather_score, 0.0) as weather_score,
   COALESCE(e.academic_surge_score, 0.0) as academic_surge_score,
   COALESCE(e.civic_mandate_score, 0.0) as civic_mandate_score,
+  COALESCE(e.operational_score, 0.0) as operational_score,
   ROUND(
-    (0.35 * COALESCE(w.weather_score, 0.0)) + 
-    (0.20 * COALESCE(e.academic_surge_score, 0.0)) + 
-    (0.45 * COALESCE(e.civic_mandate_score, 0.0)),
+    (0.25 * COALESCE(w.weather_score, 0.0)) + 
+    (0.15 * COALESCE(e.academic_surge_score, 0.0)) + 
+    (0.35 * COALESCE(e.civic_mandate_score, 0.0)) +
+    (0.25 * COALESCE(e.operational_score, 0.0)),
     4
   ) as cfi,
   CASE 
@@ -186,8 +189,11 @@ SELECT
 FROM "Analytics".hourly_threshold_baselines;
 
 -- 7. Create Simulation Run Archival Table (Persists Stress Test Parameters)
-CREATE TABLE IF NOT EXISTS "Analytics".simulation_history (
-    simulation_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE SEQUENCE IF NOT EXISTS "Analytics".seq_simulation_history START WITH 1;
+
+DROP TABLE IF EXISTS "Analytics".simulation_history CASCADE;
+CREATE TABLE "Analytics".simulation_history (
+    simulation_id text PRIMARY KEY DEFAULT ('SIM' || LPAD(nextval('"Analytics".seq_simulation_history')::text, 6, '0')),
     run_number integer NOT NULL,
     station_name text NOT NULL,
     trigger_type text NOT NULL,
