@@ -1,25 +1,17 @@
-name: LRT2 Automated Ingestion & Forecasting
+name: LRT2 Daily ML Forecasting
 
 on:
   schedule:
-    # Run once every hour to safely ingest weather and events
-    - cron: '0 * * * *'
     # Run daily at 8:00 PM UTC (4:00 AM Manila Time) to pre-populate predictions before train operations start
     - cron: '0 20 * * *'
   workflow_dispatch: # Allows manual trigger from the GitHub web UI
 
 jobs:
-  run-pipeline:
+  run-forecaster:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm' # Speeds up execution by caching npm packages (abides by free tier limits)
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -27,23 +19,11 @@ jobs:
           python-version: '3.10'
           cache: 'pip' # Speeds up execution by caching python packages
 
-      - name: Install Node Dependencies
-        run: npm ci
-
       - name: Install Python Dependencies
         run: pip install pandas numpy xgboost scikit-learn psycopg2-binary dotenv
 
-      - name: Run Web Scraper & Ingestion
-        env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: node run_pipeline.js
-
-      # Run model training & baseline forecast calculation once a day at 8:00 PM UTC (04:00 AM Manila Time)
+      # Run model training & baseline forecast calculation
       - name: Run ML Training & Forecast
-        if: github.event.schedule == '0 20 * * *' || github.event_name == 'workflow_dispatch'
         env:
           DB_HOST: ${{ secrets.DB_HOST }}
           DB_NAME: ${{ secrets.DB_NAME }}
