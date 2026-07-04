@@ -20,7 +20,7 @@ jobs:
           cache: 'pip' # Speeds up execution by caching python packages
 
       - name: Install Python Dependencies
-        run: pip install pandas numpy xgboost scikit-learn psycopg2-binary dotenv
+        run: pip install -r requirements.txt
 
       # Run model training & baseline forecast calculation
       - name: Run ML Training & Forecast
