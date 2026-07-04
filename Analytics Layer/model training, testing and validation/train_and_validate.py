@@ -75,6 +75,7 @@ def main():
     try:
         print("[INGEST] Running pd.read_sql_query...", flush=True)
         df = pd.read_sql_query(query, conn)
+        df = df.fillna(0)
         print("[INGEST] Query execution and fetching finished.", flush=True)
     except Exception as e:
         print(f"[ERROR] Query failed: {e}", flush=True)
