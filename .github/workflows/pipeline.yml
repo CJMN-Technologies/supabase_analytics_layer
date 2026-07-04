@@ -25,8 +25,8 @@ jobs:
       # Run model training & baseline forecast calculation
       - name: Run ML Training & Forecast
         env:
-          DB_HOST: "aws-0-ap-southeast-1.pooler.supabase.com"
-          DB_PORT: "6543"
+          DB_HOST: "aws-1-ap-southeast-1.pooler.supabase.com"
+          DB_PORT: "5432"
           DB_NAME: "postgres"
           DB_USER: "postgres.kthioobzfyepokrrykem"
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
