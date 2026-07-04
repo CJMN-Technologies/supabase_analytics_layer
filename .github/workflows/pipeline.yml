@@ -25,8 +25,9 @@ jobs:
       # Run model training & baseline forecast calculation
       - name: Run ML Training & Forecast
         env:
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-          DB_USER: ${{ secrets.DB_USER }}
+          DB_HOST: "aws-0-ap-southeast-1.pooler.supabase.com"
+          DB_PORT: "6543"
+          DB_NAME: "postgres"
+          DB_USER: "postgres.kthioobzfyepokrrykem"
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: python "Analytics Layer/model training, testing and validation/train_and_validate.py"
