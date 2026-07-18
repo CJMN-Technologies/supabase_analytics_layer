@@ -34,6 +34,15 @@ $$P_v = \left(\frac{F_s - B_m}{B_m}\right) \times 100$$
 **Mean Absolute Percentage Error (MAPE):**
 $$M = \frac{100}{n}\sum_{i=1}^{n}\left|\frac{A_i - F_i}{A_i}\right|$$
 
+**Capacity Percentage piecewise linear scaling formula ($CP$):**
+* **Normal** ($V_p < W_t$): 
+  $$CP = \left(\frac{V_p}{W_t}\right) \times 80.0$$
+* **Warning** ($W_t \le V_p < C_t$): 
+  $$CP = 80.0 + \left(\frac{V_p - W_t}{C_t - W_t}\right) \times 10.0$$
+* **Critical** ($V_p \ge C_t$): 
+  $$CP = 90.0 + \left(\frac{V_p - C_t}{C_t}\right) \times 10.0$$
+  *(where $V_p$ is the predicted passenger volume, $W_t$ is the 80th percentile Warning Threshold, and $C_t$ is the 90th percentile Critical Threshold. This maps predicted occupancy values smoothly into the visual intervals expected by the dashboard: Normal $< 80\%$, Warning $[80\%, 90\%)$, Critical $\ge 90\%$)*
+
 ### Dictionary of Variables
 
 #### Scenario Simulation Variables
