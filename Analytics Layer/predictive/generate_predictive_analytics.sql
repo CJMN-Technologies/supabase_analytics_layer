@@ -593,7 +593,14 @@ SELECT
   COALESCE(c.current_occupancy, tb.median_volume) as current_occupancy,
   COALESCE(p.predicted_occupancy, tb.median_volume) as predicted_occupancy,
   tb.warning_threshold as threshold,
-  ROUND((COALESCE(p.predicted_occupancy, tb.median_volume)::numeric / NULLIF(tb.warning_threshold, 0)) * 100.0, 2) as capacity_percentage,
+  CASE 
+    WHEN COALESCE(p.predicted_occupancy, tb.median_volume) < tb.warning_threshold THEN
+      ROUND((COALESCE(p.predicted_occupancy, tb.median_volume)::numeric / NULLIF(tb.warning_threshold, 0)) * 80.0, 2)
+    WHEN COALESCE(p.predicted_occupancy, tb.median_volume) < tb.critical_threshold THEN
+      ROUND(80.0 + ((COALESCE(p.predicted_occupancy, tb.median_volume) - tb.warning_threshold)::numeric / NULLIF(tb.critical_threshold - tb.warning_threshold, 0)) * 10.0, 2)
+    ELSE
+      ROUND(90.0 + ((COALESCE(p.predicted_occupancy, tb.median_volume) - tb.critical_threshold)::numeric / NULLIF(tb.critical_threshold, 0)) * 10.0, 2)
+  END as capacity_percentage,
   CASE 
     WHEN COALESCE(p.predicted_occupancy, tb.median_volume) >= tb.critical_threshold THEN 'Critical'
     WHEN COALESCE(p.predicted_occupancy, tb.median_volume) >= tb.warning_threshold THEN 'Warning'
