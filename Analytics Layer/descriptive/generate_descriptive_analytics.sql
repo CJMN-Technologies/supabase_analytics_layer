@@ -224,26 +224,37 @@ SELECT
     WHEN normalized_score >= 0.45 THEN 'warning'::text
     ELSE 'informational'::text
   END as urgency,
-  station as station_name
+  station as station_name,
+  NULL::text as source_url,
+  NULL::text as description
 FROM external.weather_consolidated
 WHERE weather_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
   AND normalized_score > 0.0
 UNION ALL
 SELECT 
-  id as trigger_id,
+  MIN(id) as trigger_id,
   CASE 
     WHEN event_category IN ('class_suspension', 'school_break') THEN 'lgu'::text
     ELSE 'institution'::text
   END as source_type,
-  source_name as source,
-  'Station: ' || station || ' - ' || event_name || ' (' || trigger_category || ')' as message,
-  (event_date + time '08:00:00') AT TIME ZONE 'Asia/Manila' as time,
+  string_agg(DISTINCT source_name, ' / ') as source,
+  'Station: ' || string_agg(DISTINCT station, ', ') || ' - ' || event_name || ' (' || trigger_category || ')' as message,
+  MAX((event_date + time '08:00:00') AT TIME ZONE 'Asia/Manila') as time,
   CASE 
-    WHEN normalized_score >= 0.8 THEN 'critical'::text
-    WHEN normalized_score >= 0.45 THEN 'warning'::text
+    WHEN MAX(normalized_score) >= 0.8 THEN 'critical'::text
+    WHEN MAX(normalized_score) >= 0.45 THEN 'warning'::text
     ELSE 'informational'::text
   END as urgency,
-  station as station_name
+  string_agg(DISTINCT station, ', ') as station_name,
+  MAX(source_url) as source_url,
+  MAX(description) as description
 FROM external.events_consolidated
 WHERE event_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
-  AND normalized_score > 0.0;
+  AND normalized_score > 0.0
+GROUP BY
+  event_date,
+  event_category,
+  event_name,
+  trigger_category;
+
+GRANT SELECT ON "Analytics".descriptive_live_event_feed TO anon, authenticated, service_role;

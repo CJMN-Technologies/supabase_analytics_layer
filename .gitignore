@@ -20,3 +20,10 @@ Thumbs.db
 Transformation Layer/Transformation_Layer_Documentation.pdf
 Analytics Layer/Analytics_Layer_Documentation.pdf
 Analytics Layer/Supabase_Transformation_and_Analytics.pdf
+
+# Non-analytics workspace folders
+Command Center Dashboard/
+Scraper/
+Analytics/
+runs.json
+scratch/test_*.py

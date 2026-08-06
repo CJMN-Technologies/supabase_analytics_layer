@@ -277,5 +277,9 @@ const finalSQL = `-- ===========================================================
 ` +
   [2021, 2022, 2023, 2024, 2025].map(generateYearSQL).join('\n\n');
 
-fs.writeFileSync(path.join(__dirname, 'sql', 'transform_ridership_hourly.sql'), finalSQL);
+const outDir = path.join(__dirname, 'sql');
+if (!fs.existsSync(outDir)) {
+  fs.mkdirSync(outDir, { recursive: true });
+}
+fs.writeFileSync(path.join(outDir, 'transform_ridership_hourly.sql'), finalSQL);
 console.log('Successfully generated transform_ridership_hourly.sql inside sql/ folder with robust COALESCE logic and correct station offsets!');

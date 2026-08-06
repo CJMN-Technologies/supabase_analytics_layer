@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS external.events_consolidated (
     event_category text NOT NULL,
     friction_domain text NOT NULL,
     trigger_category text NOT NULL,
+    source_url text,
+    description text,
     -- Normalized score: A_sw (Academic Surge Weight) or L_sp (Surge Probability Multiplier)
     normalized_score numeric NOT NULL DEFAULT 0.0,
     -- Raw literature weight from friction_weight for traceability
@@ -129,7 +131,7 @@ BEGIN
         RETURN NEXT; RETURN;
     END IF;
 
-    IF v_combined ~* '(class(es)?\s+(and\s+office\s+)?(operations?\s+)?(will\s+be\s+|are\s+|is\s+)?suspend|suspend(ed|ing)?\s+(class|office)|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)|special\s+(non[- ]?working|public)\s+(day|holiday)|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday)' THEN
+    IF v_combined ~* '(class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|sona|state\s+of\s+the\s+nation|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|bonifactio|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
         event_name := 'Class Suspension / Holiday'; event_category := 'class_suspension'; friction_domain := 'academic'; trigger_category := 'Class Suspension / Holiday'; affects_ridership := TRUE;
         RETURN NEXT; RETURN;
     END IF;
@@ -255,13 +257,28 @@ BEGIN
     v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_source_name, ''));
     v_station_normalized := external.normalize_station_name(p_station);
 
-    -- 1. Check if the source station indicates "All Stations"
-    IF v_station_normalized = 'All Stations' THEN
+    -- 1. Check for specific local city keywords first to prevent city-specific holidays from defaulting to All Stations
+    IF v_combined ~* '\b(manila\s+day|araw\s+ng\s+maynila|founding\s+anniversary\s+of\s+manila)\b' THEN
+        v_city := 'Manila';
+    ELSIF v_combined ~* '\b(quezon\s+city\s+day|araw\s+ng\s+quezon|qc\s+day)\b' THEN
+        v_city := 'Quezon City';
+    ELSIF v_combined ~* '\b(san\s+juan\s+day|araw\s+ng\s+san\s+juan|wattah\s+wattah)\b' THEN
+        v_city := 'San Juan';
+    ELSIF v_combined ~* '\b(marikina\s+day|araw\s+ng\s+marikina)\b' THEN
+        v_city := 'Pasig and Marikina';
+    ELSIF v_combined ~* '\b(pasig\s+day|araw\s+ng\s+pasig)\b' THEN
+        v_city := 'Pasig and Marikina';
+    ELSIF v_combined ~* '\b(antipolo\s+day|araw\s+ng\s+antipolo)\b' THEN
+        v_city := 'Antipolo';
+    END IF;
+
+    -- 2. If no explicit local city holiday keyword, check if source station indicates "All Stations"
+    IF v_city IS NULL AND v_station_normalized = 'All Stations' THEN
         RETURN ARRAY['All Stations'];
     END IF;
 
-    -- 2. Map source station to city group if present
-    IF v_station_normalized IS NOT NULL AND v_station_normalized != '' THEN
+    -- 3. Map source station to city group if present
+    IF v_city IS NULL AND v_station_normalized IS NOT NULL AND v_station_normalized != '' THEN
         IF v_station_normalized IN ('Recto', 'Legarda', 'Pureza', 'V. Mapa') THEN
             v_city := 'Manila';
         ELSIF v_station_normalized IN ('J. Ruiz') THEN
@@ -275,7 +292,7 @@ BEGIN
         END IF;
     END IF;
 
-    -- 3. Check for place/city keywords in the combined text
+    -- 4. Check for place/city keywords in the combined text
     -- Manila group
     IF v_city = 'Manila' OR v_combined ~* '\b(manila|recto|legarda|pureza|v\.?\s*mapa)\b' THEN
         v_stations := v_stations || ARRAY['Recto', 'Legarda', 'Pureza', 'V. Mapa'];
@@ -301,7 +318,7 @@ BEGIN
         v_stations := v_stations || ARRAY['Antipolo'];
     END IF;
 
-    -- 4. Deduplicate the stations array
+    -- 5. Deduplicate the stations array
     IF array_length(v_stations, 1) > 0 THEN
         SELECT ARRAY(SELECT DISTINCT unnest(v_stations)) INTO v_stations;
     ELSE
@@ -372,6 +389,7 @@ BEGIN
         INSERT INTO external.events_consolidated (
             id, station, event_date, source_table, source_id, source_name,
             event_name, event_category, friction_domain, trigger_category,
+            source_url, description,
             normalized_score, friction_weight_ref, announcement_time, updated_at
         )
         VALUES (
@@ -385,6 +403,8 @@ BEGIN
             v_result.event_category,
             v_result.friction_domain,
             v_result.trigger_category,
+            NEW.source_url,
+            NEW.post_text,
             CASE
                 WHEN v_result.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
                 ELSE v_weight
@@ -401,6 +421,8 @@ BEGIN
             event_category = EXCLUDED.event_category,
             friction_domain = EXCLUDED.friction_domain,
             trigger_category = EXCLUDED.trigger_category,
+            source_url = EXCLUDED.source_url,
+            description = EXCLUDED.description,
             normalized_score = EXCLUDED.normalized_score,
             friction_weight_ref = EXCLUDED.friction_weight_ref,
             announcement_time = EXCLUDED.announcement_time,
@@ -462,7 +484,7 @@ BEGIN
     END IF;
 
     -- School Breaks (scheduled academic breaks)
-    IF v_lower ~* '(semestral\s+break|sem\s+break|christmas\s+break|summer\s+break|vacation)' THEN
+    IF v_lower ~* '(semestral\s+break|sem\s+break|christmas\s+break|summer\s+break|vacation|academic\s+break|lenten\s+break|undas)' THEN
         event_category := 'school_break';
         friction_domain := 'academic';
         trigger_category := 'School Break';
@@ -471,7 +493,7 @@ BEGIN
     END IF;
 
     -- Holidays / Class Suspensions (unscheduled or holiday class off)
-    IF v_lower ~* '(holiday|holy\s+week|class(es)?\s+suspend|suspend(ed)?\s+class)' THEN
+    IF v_lower ~* '(holiday|holy\s+week|class(es)?\s+suspend|suspend(ed)?\s+class|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|rizal\s+day|bonifacio\s+day|bonifactio|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|day\s+of\s+valor|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation|ateneo\s+president|traslacion|black\s+nazarene|sona|state\s+of\s+the\s+nation)' THEN
         event_category := 'class_suspension';
         friction_domain := 'academic';
         trigger_category := 'Class Suspension / Holiday';
@@ -479,8 +501,8 @@ BEGIN
         RETURN NEXT; RETURN;
     END IF;
 
-    -- Graduation / Commencement (major event surge)
-    IF v_lower ~* '(graduation|commencement|baccalaureate|recognition\s+(day|rites))' THEN
+    -- Graduation / Commencement / Major Campus Festivals (major event surge)
+    IF v_lower ~* '(graduation|commencement|baccalaureate|recognition\s+(day|rites)|paskuhan|lantern\s+parade)' THEN
         event_category := 'major_event';
         friction_domain := 'academic';
         trigger_category := 'Major Arena Event';
@@ -526,6 +548,8 @@ DECLARE
     v_consolidated_id text;
     v_school_acronym text;
     v_event_date date;
+    v_stations text[];
+    v_station text;
 BEGIN
     -- Prevent duplicates: delete all existing consolidated rows for this table first
     DELETE FROM external.events_consolidated WHERE source_table = p_table_name;
@@ -535,7 +559,7 @@ BEGIN
 
     -- Iterate over all rows in the calendar table
     FOR v_row IN EXECUTE format(
-        'SELECT id, station, source_name, event_date, event_name, category FROM external.%I',
+        'SELECT id, station, source_name, event_date, event_name, category, source_url FROM external.%I',
         p_table_name
     ) LOOP
         -- Classify the event
@@ -562,45 +586,55 @@ BEGIN
             v_event_date := CURRENT_DATE;
         END;
 
-        -- Build consolidated ID: CAL-[SCH]-[MMDD]-[ROW_ID]
-        v_consolidated_id := 'CAL-' || UPPER(v_school_acronym) || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || COALESCE(v_row.id, v_count::text);
+        -- Resolve list of stations affected by calling get_affected_stations
+        v_stations := external.get_affected_stations(v_row.station, v_row.event_name, '', COALESCE(v_row.source_name, v_school_acronym));
 
-        INSERT INTO external.events_consolidated (
-            id, station, event_date, source_table, source_id, source_name,
-            event_name, event_category, friction_domain, trigger_category,
-            normalized_score, friction_weight_ref, announcement_time, updated_at
-        )
-        VALUES (
-            v_consolidated_id,
-            external.normalize_station_name(COALESCE(v_row.station, 'All Stations')),
-            v_event_date,
-            p_table_name,
-            COALESCE(v_row.id, 'row-' || v_count),
-            COALESCE(v_row.source_name, v_school_acronym),
-            v_row.event_name,
-            v_class.event_category,
-            v_class.friction_domain,
-            v_class.trigger_category,
-            CASE
-                WHEN v_class.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
-                ELSE v_weight
-            END,
-            v_weight,
-            NULL,
-            now()
-        )
-        ON CONFLICT (id) DO UPDATE SET
-            station = EXCLUDED.station,
-            event_date = EXCLUDED.event_date,
-            source_name = EXCLUDED.source_name,
-            event_name = EXCLUDED.event_name,
-            event_category = EXCLUDED.event_category,
-            friction_domain = EXCLUDED.friction_domain,
-            trigger_category = EXCLUDED.trigger_category,
-            normalized_score = EXCLUDED.normalized_score,
-            friction_weight_ref = EXCLUDED.friction_weight_ref,
-            announcement_time = EXCLUDED.announcement_time,
-            updated_at = now();
+        FOREACH v_station IN ARRAY v_stations LOOP
+            -- Build deterministic consolidated ID to prevent intra-calendar duplicate rows: CAL-[SCH]-[MMDD]-[MD5_HASH]
+            v_consolidated_id := 'CAL-' || UPPER(v_school_acronym) || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || SUBSTRING(MD5(LOWER(external.normalize_station_name(v_station)) || '_' || LOWER(TRIM(v_row.event_name))), 1, 8);
+
+            INSERT INTO external.events_consolidated (
+                id, station, event_date, source_table, source_id, source_name,
+                event_name, event_category, friction_domain, trigger_category,
+                source_url, description,
+                normalized_score, friction_weight_ref, announcement_time, updated_at
+            )
+            VALUES (
+                v_consolidated_id,
+                external.normalize_station_name(v_station),
+                v_event_date,
+                p_table_name,
+                COALESCE(v_row.id, 'row-' || v_count),
+                COALESCE(v_row.source_name, v_school_acronym),
+                v_row.event_name,
+                v_class.event_category,
+                v_class.friction_domain,
+                v_class.trigger_category,
+                v_row.source_url,
+                'Event: ' || v_row.event_name || ' (Scraped from ' || replace(p_table_name, '_', ' ') || ')',
+                CASE
+                    WHEN v_class.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
+                    ELSE v_weight
+                END,
+                v_weight,
+                NULL,
+                now()
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                station = EXCLUDED.station,
+                event_date = EXCLUDED.event_date,
+                source_name = EXCLUDED.source_name,
+                event_name = EXCLUDED.event_name,
+                event_category = EXCLUDED.event_category,
+                friction_domain = EXCLUDED.friction_domain,
+                trigger_category = EXCLUDED.trigger_category,
+                source_url = EXCLUDED.source_url,
+                description = EXCLUDED.description,
+                normalized_score = EXCLUDED.normalized_score,
+                friction_weight_ref = EXCLUDED.friction_weight_ref,
+                announcement_time = EXCLUDED.announcement_time,
+                updated_at = now();
+        END LOOP;
 
         v_count := v_count + 1;
     END LOOP;
@@ -628,7 +662,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'external'
-          AND table_name LIKE '%\_Academic\_Calendar'
+          AND table_name LIKE '%\_Academic\_Calendar' ESCAPE '\'
           AND table_name NOT IN (SELECT table_name FROM external.processed_calendar_tables)
         ORDER BY table_name
     LOOP
@@ -643,3 +677,13 @@ BEGIN
     RETURN v_results;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Alias for scan_and_process_new_calendars
+CREATE OR REPLACE FUNCTION external.poll_new_academic_calendars()
+RETURNS text AS $$
+BEGIN
+    RETURN external.scan_and_process_new_calendars();
+END;
+$$ LANGUAGE plpgsql;
+
+

@@ -305,7 +305,7 @@ BEGIN
         RETURN NEXT; RETURN;
     END IF;
  
-    IF v_combined ~* '(class(es)?\s+(and\s+office\s+)?(operations?\s+)?(will\s+be\s+|are\s+|is\s+)?suspend|suspend(ed|ing)?\s+(class|office)|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)|special\s+(non[- ]?working|public)\s+(day|holiday)|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday)' THEN
+    IF v_combined ~* '(class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|sona|state\s+of\s+the\s+nation|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|bonifactio|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
         event_name := 'Class Suspension / Holiday'; event_category := 'class_suspension'; friction_domain := 'academic'; trigger_category := 'Class Suspension / Holiday'; affects_ridership := TRUE;
         RETURN NEXT; RETURN;
     END IF;
@@ -639,25 +639,25 @@ BEGIN
     END IF;
  
     -- School Breaks (scheduled academic breaks)
-    IF v_lower ~* '(semestral\s+break|sem\s+break|christmas\s+break|summer\s+break|vacation)' THEN
+    IF v_lower ~* '(semestral\s+break|sem\s+break|christmas\s+break|summer\s+break|vacation|academic\s+break|lenten\s+break|undas)' THEN
         event_category := 'school_break';
         friction_domain := 'academic';
         trigger_category := 'School Break';
         affects_ridership := TRUE;
         RETURN NEXT; RETURN;
     END IF;
- 
+
     -- Holidays / Class Suspensions (unscheduled or holiday class off)
-    IF v_lower ~* '(holiday|holy\s+week|class(es)?\s+suspend|suspend(ed)?\s+class)' THEN
+    IF v_lower ~* '(holiday|holy\s+week|class(es)?\s+suspend|suspend(ed)?\s+class|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|rizal\s+day|bonifacio\s+day|bonifactio|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|day\s+of\s+valor|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation|ateneo\s+president|traslacion|black\s+nazarene|sona|state\s+of\s+the\s+nation)' THEN
         event_category := 'class_suspension';
         friction_domain := 'academic';
         trigger_category := 'Class Suspension / Holiday';
         affects_ridership := TRUE;
         RETURN NEXT; RETURN;
     END IF;
- 
-    -- Graduation / Commencement (major event surge)
-    IF v_lower ~* '(graduation|commencement|baccalaureate|recognition\s+(day|rites))' THEN
+
+    -- Graduation / Commencement / Major Campus Festivals (major event surge)
+    IF v_lower ~* '(graduation|commencement|baccalaureate|recognition\s+(day|rites)|paskuhan|lantern\s+parade)' THEN
         event_category := 'major_event';
         friction_domain := 'academic';
         trigger_category := 'Major Arena Event';
@@ -735,9 +735,9 @@ BEGIN
             v_event_date := CURRENT_DATE;
         END;
  
-        -- Simple ID: CAL-[SCH]-[MMDD]-[ROW_ID]
-        v_consolidated_id := 'CAL-' || UPPER(v_school_acronym) || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || COALESCE(v_row.id, v_count::text);
- 
+        -- Deterministic ID: CAL-[SCH]-[MMDD]-[MD5_HASH]
+        v_consolidated_id := 'CAL-' || UPPER(v_school_acronym) || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || SUBSTRING(MD5(LOWER(external.normalize_station_name(COALESCE(v_row.station, 'All Stations'))) || '_' || LOWER(TRIM(v_row.event_name))), 1, 8);
+
         INSERT INTO external.events_consolidated (
             id, station, event_date, source_table, source_id, source_name,
             event_name, event_category, friction_domain, trigger_category,
@@ -798,7 +798,7 @@ BEGIN
         SELECT table_name
         FROM information_schema.tables
         WHERE table_schema = 'external'
-          AND table_name LIKE '%\_Academic\_Calendar'
+          AND table_name LIKE '%\_Academic\_Calendar' ESCAPE '\'
           AND table_name NOT IN (SELECT table_name FROM external.processed_calendar_tables)
         ORDER BY table_name
     LOOP
@@ -813,6 +813,16 @@ BEGIN
     RETURN v_results;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Alias for scan_and_process_new_calendars
+CREATE OR REPLACE FUNCTION external.poll_new_academic_calendars()
+RETURNS text AS $$
+BEGIN
+    RETURN external.scan_and_process_new_calendars();
+END;
+$$ LANGUAGE plpgsql;
+
+
 
 -- 2a. Tracking table for processed calendar tables
 CREATE TABLE IF NOT EXISTS external.processed_calendar_tables (
