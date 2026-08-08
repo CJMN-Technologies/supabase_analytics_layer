@@ -179,3 +179,17 @@ The Node validation script performs eleven core integrity checks on every active
 10. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views return aggregated datasets.
 11. **Prescriptive APTA Schema Integrity Check:** Verifies that protocol deployments resolve to valid APTA IDs, checklists map to target roles, and metrics are mathematically compliant.
 
+---
+
+## 7. Academic Literature References & Operational Weights
+
+Operational incident reports submitted via the Ground Control Mobile App (`gcs.incidents`) are automatically mapped via trigger `gcs.sync_incidents_to_events_consolidated` to open-access academic literature weights in `external.friction_weight`:
+
+| Incident Severity | Trigger Category | Weight ($W_{op}$) | Academic / Transit Report Citation | Open-Access PDF Link |
+| :--- | :--- | :---: | :--- | :--- |
+| **Critical** | Code Red / Standstill | **1.00** | *Disaster & Emergency Preparedness for PH Rail Lines* (JICA / DOTr) | [JICA Report PDF](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **Warning** | Degraded Headway | **0.50** | *Evaluation of Rail Transit Reliability in Metro Manila* (Fillone et al., NCTS UP Diliman) | [NCTS UP Diliman TSSP PDF](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **Partial Line** | Partial Suspension | **0.85** | *Vulnerability Assessment of Metro Manila Rail Networks* (EASTS Proceedings) | [EASTS Proceedings PDF](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+
+*Full academic attributions and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
+
