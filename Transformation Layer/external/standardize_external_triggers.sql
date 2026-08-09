@@ -263,9 +263,8 @@ DECLARE
     v_combined text;
 BEGIN
     v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, ''));
- 
-    -- Global filter for planning, coordination meetings, and ocular visits
-    -- Bypassed if the text explicitly declares active suspension or strike actions
+
+    -- Filter 1: Planning / Administrative meetings
     IF (v_combined ~* '(coordination\s+meeting|ocular\s+visit|ocular\s+meeting|planning\s+meeting|planning\s+session|preparatory\s+meeting|committee\s+meeting|coordination\s+visit|pre-event\s+coordination)'
         OR (v_combined ~* '(meeting|ocular|planning|preparation|discussion)' 
             AND NOT v_combined ~* '(suspend|walang\s+pasok|no\s+class|strike|tigil\s+pasada|welga)')) THEN
@@ -277,8 +276,8 @@ BEGIN
         RETURN NEXT;
         RETURN;
     END IF;
- 
-    -- Global filter for administrative/internal events (grade posting, release, deliberation, dropping, leave filing)
+
+    -- Filter 2: Administrative / Internal notices
     IF v_combined ~* '(promotions?\s+board|posting\s+of.*(grade|result)|deliberation|grade\s+release|final\s+grade|drop(ping)?\s+of\s+subject|leave\s+of\s+absence|filing\s+of\s+leave)' THEN
         event_name := 'Administrative/Internal Notice';
         event_category := 'administrative';
@@ -288,45 +287,65 @@ BEGIN
         RETURN NEXT;
         RETURN;
     END IF;
- 
-    IF v_combined ~* '(typhoon|tropical\s+cyclone|signal\s+no|rainfall\s+warning|heavy\s+rain(shower)?s?\s+(warning|advisory)|thunderstorm\s+advisory|flood\s+advisory|habagat|southwest\s+monsoon|weather\s+advisory)' THEN
-        event_name := 'Weather Advisory'; event_category := 'weather_advisory'; friction_domain := 'pagasa'; trigger_category := NULL; affects_ridership := FALSE;
-        RETURN NEXT; RETURN;
+
+    -- Filter 3: Class / Exam / Transaction Suspensions (HIGHEST PRIORITY for cancellations)
+    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance)|class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office|transaction)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|sona|state\s+of\s+the\s+nation|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
+        event_name := 'Class Suspension / Holiday'; 
+        event_category := 'class_suspension'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Class Suspension / Holiday'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
     END IF;
- 
-    IF v_combined ~* '(road\s+repair|drainage|infrastructure|kalsada|sirang\s+kalsada|construction|asphalting)'
-       AND NOT v_combined ~* '(suspend|pasok|class|exam)' THEN
-        event_name := 'Infrastructure Notice'; event_category := 'infrastructure'; friction_domain := NULL; trigger_category := NULL; affects_ridership := FALSE;
-        RETURN NEXT; RETURN;
+
+    -- Filter 4: LGU Maintenance / Tree Trimming / Clearing Activities
+    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning)' THEN
+        event_name := 'LGU Clearing & Maintenance Activity'; 
+        event_category := 'infrastructure'; 
+        friction_domain := 'lgu'; 
+        trigger_category := 'Road Closure / Obstruction'; 
+        affects_ridership := FALSE;
+        RETURN NEXT; 
+        RETURN;
     END IF;
- 
-    IF v_combined ~* '(semestral\s+break|sem\s+break|christmas\s+break|summer\s+break|vacation)' THEN
-        event_name := 'School Break'; event_category := 'school_break'; friction_domain := 'academic'; trigger_category := 'School Break'; affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
- 
-    IF v_combined ~* '(class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|sona|state\s+of\s+the\s+nation|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|bonifactio|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
-        event_name := 'Class Suspension / Holiday'; event_category := 'class_suspension'; friction_domain := 'academic'; trigger_category := 'Class Suspension / Holiday'; affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
- 
+
+    -- Filter 5: Transport Strike
     IF v_combined ~* '(transport\s+strike|tigil\s+pasada|welga|jeepney\s+strike|piston|manibela|transport\s+group)' THEN
-        event_name := 'Transport Strike'; event_category := 'transport_strike'; friction_domain := 'academic'; trigger_category := 'Transport Strike'; affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
+        event_name := 'Transport Strike'; 
+        event_category := 'transport_strike'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Transport Strike'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
     END IF;
- 
+
+    -- Filter 6: Major Arena Events
     IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|rally|pep\s+rally|game\s+day)' THEN
-        event_name := 'Major Arena / Sports Event'; event_category := 'major_event'; friction_domain := 'academic'; trigger_category := 'Major Arena Event'; affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
+        event_name := 'Major Arena / Sports Event'; 
+        event_category := 'major_event'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Major Arena Event'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
     END IF;
- 
-    IF v_combined ~* '(exam(ination)?s?|midterm|finals?\s+(exam|week)|prelim(inary)?\s+exam|long\s+exam|qualifying\s+exam)' THEN
-        event_name := 'Examination Period'; event_category := 'exam_week'; friction_domain := 'academic'; trigger_category := 'University Exam Week'; affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
+
+    -- Filter 7: Examination Period (ONLY if NOT cancelled/suspended)
+    IF v_combined ~* '(exam(ination)?s?|midterm|finals?\s+(exam|week)|prelim(inary)?\s+exam|long\s+exam|qualifying\s+exam)' 
+       AND NOT v_combined ~* '(cancel|suspend|walang\s+pasok|no\s+class)' THEN
+        event_name := 'Examination Period'; 
+        event_category := 'exam_week'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'University Exam Week'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
     END IF;
- 
+
+    -- Filter 8: Academic Start / Enrollment
     IF v_combined ~* '(enrollment|orientation|first\s+day\s+of\s+(class|regular\s+class)|start\s+of\s+class|opening\s+of\s+class)' THEN
-        event_name := 'Academic Start / Enrollment'; event_category := 'regular_class_day'; friction_domain := 'academic'; trigger_category := 'Regular Class Day'; affects_ridership := TRUE;
         RETURN NEXT; RETURN;
     END IF;
  
