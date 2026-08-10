@@ -231,7 +231,7 @@ def main():
             cur.executemany(insert_query, records_to_insert)
             print(f"   Success: Persisted {len(records_to_insert)} test set predictions to predictive_model_outputs.", flush=True)
             
-            # Update performance metrics
+            # Update latest performance metrics snapshot
             perf_query = """
                 INSERT INTO "Analytics".predictive_model_performance 
                   (model_name, mape, rmse, classification_accuracy, recall_score, last_trained_timestamp)
@@ -246,6 +246,16 @@ def main():
                   last_trained_timestamp = NOW();
             """
             cur.execute(perf_query, (mape, rmse, accuracy, recall_w))
+            
+            # Append immutable historical metric record (never overwritten, keeps every metric record per prediction/run)
+            history_query = """
+                INSERT INTO "Analytics".predictive_model_performance_history 
+                  (model_name, mape, rmse, classification_accuracy, recall_score, recorded_at)
+                VALUES 
+                  ('LRT2_Volume_Forecast_XGBoost', %s, %s, 0.0, 0.0, NOW()),
+                  ('LRT2_Threat_Classifier_RandomForest', 0.0, 0.0, %s, %s, NOW());
+            """
+            cur.execute(history_query, (mape, rmse, accuracy, recall_w))
             
         conn.commit()
         print("   Success: Database transaction committed.", flush=True)
