@@ -214,6 +214,24 @@ CREATE INDEX IF NOT EXISTS idx_sim_history_executed ON "Analytics".simulation_hi
 -- 8. Create Live trigger Feed view for dashboard monitoring feed
 CREATE OR REPLACE VIEW "Analytics".descriptive_live_event_feed AS
 SELECT 
+  id as trigger_id,
+  'weather'::text as source_type,
+  'Open-Meteo Weather Service'::text as source,
+  'Station: ' || station || ' - Temp: ' || temperature || '°C, Rain: ' || rainfall_mm || 'mm (' || COALESCE(NULLIF(computed_rainfall_level, 'None'), 'Normal') || ')' as message,
+  (observed_at AT TIME ZONE 'Asia/Manila')::timestamp without time zone as time,
+  CASE 
+    WHEN rainfall_mm >= 15.0 OR computed_rainfall_level IN ('Heavy', 'Torrential', 'Monsoon') THEN 'warning'::text
+    ELSE 'low'::text
+  END as urgency,
+  station as station_name,
+  'https://open-meteo.com'::text as source_url,
+  'Station live weather metrics via Open-Meteo API'::text as description
+FROM external.weather_current
+WHERE (observed_at AT TIME ZONE 'Asia/Manila')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
+
+UNION ALL
+
+SELECT 
   MIN(id) as trigger_id,
   CASE 
     WHEN category = 'lgu' THEN 'lgu'::text
@@ -225,10 +243,10 @@ SELECT
   CASE 
     WHEN LOWER(COALESCE(event_name, '')) LIKE '%suspension%' 
       OR LOWER(COALESCE(event_name, '')) LIKE '%walang pasok%' 
-      OR LOWER(COALESCE(event_name, '')) LIKE '%red%' THEN 'critical'::text
-    WHEN LOWER(COALESCE(event_name, '')) LIKE '%advisory%' 
-      OR LOWER(COALESCE(event_name, '')) LIKE '%warning%' THEN 'warning'::text
-    ELSE 'informational'::text
+      OR LOWER(COALESCE(event_name, '')) LIKE '%warning%' 
+      OR LOWER(COALESCE(event_name, '')) LIKE '%alert%' 
+      OR LOWER(COALESCE(event_name, '')) LIKE '%heavy%' THEN 'warning'::text
+    ELSE 'low'::text
   END as urgency,
   string_agg(DISTINCT station, ', ') as station_name,
   MAX(source_url) as source_url,
