@@ -214,47 +214,39 @@ CREATE INDEX IF NOT EXISTS idx_sim_history_executed ON "Analytics".simulation_hi
 -- 8. Create Live trigger Feed view for dashboard monitoring feed
 CREATE OR REPLACE VIEW "Analytics".descriptive_live_event_feed AS
 SELECT 
-  id as trigger_id,
-  'pagasa'::text as source_type,
-  'PAGASA Weather Alert'::text as source,
-  'Station: ' || station || ' - ' || trigger_category || ' (Rain: ' || rainfall_mm || 'mm, Temp: ' || temperature_temp_max || '°C)' as message,
-  observed_or_forecasted_at AT TIME ZONE 'Asia/Manila' as time,
-  CASE 
-    WHEN normalized_score >= 0.8 THEN 'critical'::text
-    WHEN normalized_score >= 0.45 THEN 'warning'::text
-    ELSE 'informational'::text
-  END as urgency,
-  station as station_name,
-  NULL::text as source_url,
-  NULL::text as description
-FROM external.weather_consolidated
-WHERE weather_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
-  AND normalized_score > 0.0
-UNION ALL
-SELECT 
   MIN(id) as trigger_id,
   CASE 
-    WHEN event_category IN ('class_suspension', 'school_break') THEN 'lgu'::text
-    ELSE 'institution'::text
+    WHEN category = 'lgu' THEN 'lgu'::text
+    ELSE 'academic'::text
   END as source_type,
   string_agg(DISTINCT source_name, ' / ') as source,
-  'Station: ' || string_agg(DISTINCT station, ', ') || ' - ' || event_name || ' (' || trigger_category || ')' as message,
-  MAX((event_date + time '08:00:00') AT TIME ZONE 'Asia/Manila') as time,
+  'Station: ' || string_agg(DISTINCT station, ', ') || ' - ' || COALESCE(event_name, 'Event Notice') as message,
+  (MAX(COALESCE(post_date, scraped_at)) AT TIME ZONE 'Asia/Manila')::timestamp without time zone as time,
   CASE 
-    WHEN MAX(normalized_score) >= 0.8 THEN 'critical'::text
-    WHEN MAX(normalized_score) >= 0.45 THEN 'warning'::text
+    WHEN LOWER(COALESCE(event_name, '')) LIKE '%suspension%' 
+      OR LOWER(COALESCE(event_name, '')) LIKE '%walang pasok%' 
+      OR LOWER(COALESCE(event_name, '')) LIKE '%red%' THEN 'critical'::text
+    WHEN LOWER(COALESCE(event_name, '')) LIKE '%advisory%' 
+      OR LOWER(COALESCE(event_name, '')) LIKE '%warning%' THEN 'warning'::text
     ELSE 'informational'::text
   END as urgency,
   string_agg(DISTINCT station, ', ') as station_name,
   MAX(source_url) as source_url,
-  MAX(description) as description
-FROM external.events_consolidated
-WHERE event_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
-  AND normalized_score > 0.0
+  MAX(post_text) as description
+FROM external.academic_lgu_events
+WHERE (
+  event_date IS NULL 
+  OR (
+    CASE 
+      WHEN SUBSTRING(event_date FROM '^\d{4}-\d{2}-\d{2}') IS NOT NULL 
+      THEN SUBSTRING(event_date FROM '^\d{4}-\d{2}-\d{2}')::date 
+      ELSE NULL 
+    END
+  ) >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date - INTERVAL '1 day'
+)
 GROUP BY
   event_date,
-  event_category,
-  event_name,
-  trigger_category;
+  category,
+  event_name;
 
 GRANT SELECT ON "Analytics".descriptive_live_event_feed TO anon, authenticated, service_role;
