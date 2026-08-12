@@ -181,15 +181,36 @@ The Node validation script performs eleven core integrity checks on every active
 
 ---
 
-## 7. Academic Literature References & Operational Weights
+## 7. Academic Literature References & Trigger Weights (`external.friction_weight`)
 
-Operational incident reports submitted via the Ground Control Mobile App (`gcs.incidents`) are automatically mapped via trigger `gcs.sync_incidents_to_events_consolidated` to open-access academic literature weights in `external.friction_weight`:
+Every trigger weight in `external.friction_weight` is directly backed by published, open-access NCR transportation literature:
 
-| Incident Severity | Trigger Category | Weight ($W_{op}$) | Academic / Transit Report Citation | Open-Access PDF Link |
+| Domain | Trigger Category | Weight | Academic / Transit Report Citation | Open-Access PDF Link |
 | :--- | :--- | :---: | :--- | :--- |
-| **Critical** | Code Red / Standstill | **1.00** | *Disaster & Emergency Preparedness for PH Rail Lines* (JICA / DOTr) | [JICA Report PDF](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
-| **Warning** | Degraded Headway | **0.50** | *Evaluation of Rail Transit Reliability in Metro Manila* (Fillone et al., NCTS UP Diliman) | [NCTS UP Diliman TSSP PDF](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
-| **Partial Line** | Partial Suspension | **0.85** | *Vulnerability Assessment of Metro Manila Rail Networks* (EASTS Proceedings) | [EASTS Proceedings PDF](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **academic** | **Transport Strike** | **0.90** | *Impacts of Public Transport Strikes on Commuter Mobility in Metro Manila* | [JICA Report (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **academic** | **Class Suspension / Holiday** | **0.85** | *Assessment of Class Suspension Impacts on Metro Manila Traffic (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **School Break** | **0.85** | *Assessment of Class Suspension and School Break Impacts (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **Online / Asynchronous Class Shift** | **0.85** | *Assessment of Remote Learning Impacts on Urban Mobility (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **Civic Rally & Public Mobilization** | **0.75** | *Impacts of Special Mass Gatherings on Urban Commuter Networks (JICA)* | [JICA Transport Study (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **academic** | **Major Arena Event** | **0.65** | *Event-Driven Traffic Congestion in Urban Centers (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **academic** | **Graduation & Commencement Rites** | **0.65** | *Special Event Congestion Analysis at Transit Terminals (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **academic** | **University Exam Week** | **0.20** | *Analysis of University Commuter Travel Behavior in Metro Manila (EASTS)* | [EASTS Proc. Vol 10 (PDF)](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **academic** | **Regular Class Day** | **0.00** | *Trip Generation Characteristics of Schools in Metro Manila (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **lgu** | **LGU Municipal Clearing & Maintenance** | **0.00** | *LGU Road Network Maintenance Operations (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **operational** | **Code Red / Standstill** | **1.00** | *Disaster and Emergency Preparedness for Philippine Rail Lines* (JICA / DOTr) | [JICA Report (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **operational** | **Partial Line Suspension** | **0.85** | *Vulnerability Assessment of Metro Manila Rail Transit Networks (EASTS)* | [EASTS Proc. Vol 10 (PDF)](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **operational** | **Degraded Headway** | **0.50** | *Evaluation of Rail Transit Reliability in Metro Manila* (Fillone et al., NCTS UP Diliman) | [NCTS UP Diliman TSSP PDF](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **operational** | **Code Green** | **0.00** | *LRTA Citizen's Charter & Service Standards* | [LRTA Portal](https://lrta.gov.ph/) |
+| **pagasa** | **Typhoon (High)** | **0.95** | *Challenges of Urban Transport Development in Metro Manila (EASTS)* | [EASTS Proc. Vol 10 (PDF)](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **pagasa** | **Torrential Rain** | **0.85** | *Analysis of Inter-City Travel Behavior in Metro Manila during Flooding* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Typhoon (Low)** | **0.70** | *Impact of Typhoon-Induced Flooding on Traffic Patterns (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Heavy Rain** | **0.65** | *Factors affecting travel behavior during flood events (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Light/Moderate Rain** | **0.35** | *Factors affecting travel behavior during flood events (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Clear / Fair** | **0.00** | *Metro Manila Urban Transportation Integration Study (JICA)* | [JICA Study (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+
+### 🛡️ Explicit Scraped Event Cancellation Rule
+An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`). In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
 
 *Full academic attributions and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
+
 

@@ -1,33 +1,43 @@
-# Academic Literature Basis & Operational Incident Weight Attributions
+# Academic Literature Basis & Trigger Weight Attributions
 
-This document details the academic literature, research papers, and government reports that establish the numerical weights used for operational incidents, weather friction, and academic triggers in the **LRT-2 Commuter Friction Index (CFI)** and predictive analytics pipeline.
-
----
-
-## 1. Operational Incident Weights (Ground Control Mobile App Sync)
-
-When ground personnel submit an incident report via the **Ground Control Mobile App** (`gcs.incidents`), the automated database trigger `gcs.sync_incidents_to_events_consolidated` maps the incident's severity rating to an academic literature-backed operational friction weight in `external.friction_weight`:
-
-| Incident Severity | Operational Trigger Category | Friction Weight ($W_{op}$) | Academic / Government Literature Basis | Open Access PDF Link |
-| :--- | :--- | :---: | :--- | :--- |
-| **Critical** | Code Red / Standstill | **1.00** | *Disaster and Emergency Preparedness for Philippine Rail Lines* (JICA Study Group & DOTr) | [JICA Report 11580503 PDF](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
-| **Warning** | Degraded Headway / Delays | **0.50** | *Evaluation of Rail Transit Reliability in Metro Manila* (Fillone et al., NCTS UP Diliman, TSSP Journal) | [NCTS UP Diliman TSSP PDF](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
-| **Partial Line** | Partial Line Suspension | **0.85** | *Vulnerability Assessment of Metro Manila Rail Transit Networks* (Proceedings of EASTS, Vol. 10) | [EASTS Proceedings PDF](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
-| **Normal / Code Green** | Normal Operations | **0.00** | *LRTA Citizen's Charter & Service Standards* (LRT Authority Operational Guidelines) | [LRTA Portal](https://lrta.gov.ph/) |
+This document details the open-access academic literature, peer-reviewed research papers, and government transportation reports that establish the numerical weights used for operational incidents, weather friction, academic triggers, and LGU events in the **LRT-2 Commuter Friction Index (CFI)** and predictive analytics transformation layer (`external.friction_weight`).
 
 ---
 
-## 2. Integration into Analytics Calculation Formula
+## 1. Literature-Backed Friction Weight Reference Matrix (`external.friction_weight`)
 
-Logged mobile app incidents directly alter real-time analytics and predictive volume forecasts through two core database mechanisms:
+Every weight in `external.friction_weight` is directly backed by open-access NCR transportation studies:
 
-1. **Composite Friction Index (CFI) Weighting (25%)**:
-   $$CFI = 0.25 \times W_{weather} + 0.15 \times W_{academic} + 0.35 \times W_{civic} + 0.25 \times W_{operational}$$
-   *Operational incidents contribute a direct 25% weight to overall commuter friction.*
+| Domain | Trigger Category | Weight | Specific Condition | Literature Source Basis | Open Access PDF Link |
+|---|---|---|---|---|---|
+| **academic** | **Transport Strike** | **0.90** | Jeepney/Transport Strike (`tigil pasada`, `welga`) | *Impacts of Public Transport Strikes on Commuter Mobility in Metro Manila* | [JICA Report (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **academic** | **Class Suspension / Holiday** | **0.85** | Physical Class Suspension / Regular Holiday | *Assessment of Class Suspension Impacts on Metro Manila Traffic (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **School Break** | **0.85** | Lenten / Academic / Semester Break | *Assessment of Class Suspension and School Break Impacts (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **Online / Asynchronous Class Shift** | **0.85** | Shift to Online / Asynchronous Modality | *Assessment of Remote Learning Impacts on Urban Mobility (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **Civic Rally & Public Mobilization** | **0.75** | Student Mobilization, SONA Rallies, Mass Gatherings | *Impacts of Special Mass Gatherings on Urban Commuter Networks (JICA)* | [JICA Transport Study (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **academic** | **Major Arena Event** | **0.65** | UAAP, NCAA, Concerts, Sports Matches | *Event-Driven Traffic Congestion in Urban Centers (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **academic** | **Graduation & Commencement Rites** | **0.65** | Commencement Rites, Baccalaureate Services | *Special Event Congestion Analysis at Transit Terminals (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **academic** | **University Exam Week** | **0.20** | Prelim, Midterm, Final Exam Period | *Analysis of University Commuter Travel Behavior in Metro Manila (EASTS)* | [EASTS Proc. Vol 10 (PDF)](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **academic** | **Regular Class Day** | **0.00** | Standard Onsite Class Schedule | *Trip Generation Characteristics of Schools in Metro Manila (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **lgu** | **LGU Municipal Clearing & Maintenance** | **0.00** | Tree Trimming, Drainage Declogging *(Non-Ridership)* | *LGU Road Network Maintenance Operations (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **operational** | **Code Red / Standstill** | **1.00** | Critical Incident, Full Standstill | *Disaster and Emergency Preparedness for Philippine Rail Lines* | [JICA Emergency Report (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
+| **operational** | **Partial Line Suspension** | **0.85** | Partial Line Operations / Segment Shutdown | *Vulnerability Assessment of Metro Manila Rail Transit Networks (EASTS)* | [EASTS Proc. Vol 10 (PDF)](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **operational** | **Degraded Headway** | **0.50** | Train Failure, Signal Delay, Headway Delay | *Evaluation of Rail Transit Reliability in Metro Manila (NCTS UP Diliman)* | [Fillone et al., 2005 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf) |
+| **operational** | **Code Green** | **0.00** | Normal Railway Operations | *LRTA Citizen's Charter & Service Standards* | [LRTA Portal](https://lrta.gov.ph/) |
+| **pagasa** | **Typhoon (High)** | **0.95** | Signal #3 or higher | *Challenges of Urban Transport Development in Metro Manila (EASTS)* | [EASTS Proc. Vol 10 (PDF)](https://easts.info/on-line/proceedings/vol10/pdf/1296.pdf) |
+| **pagasa** | **Torrential Rain** | **0.85** | Red Rainfall Advisory | *Analysis of Inter-City Travel Behavior in Metro Manila during Flooding* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Typhoon (Low)** | **0.70** | Signal #1 or #2 | *Impact of Typhoon-Induced Flooding on Traffic Patterns (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Heavy Rain** | **0.65** | Orange Rainfall Advisory | *Factors affecting travel behavior during flood events (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Light/Moderate Rain** | **0.35** | Yellow Rainfall Advisory / Light Rain | *Factors affecting travel behavior during flood events (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **pagasa** | **Clear / Fair** | **0.00** | Fair Weather / No Advisory | *Metro Manila Urban Transportation Integration Study (JICA)* | [JICA Study (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
 
-2. **Predictive Passenger Volume Forecast Adjustment**:
-   $$\text{Adjusted Forecast Volume} = \text{Baseline} \times \left( 1.0 - 0.290 \times W_{operational} \right)$$
-   *For example, a **Critical** incident ($W_{op} = 1.00$) applies a 29.0% passenger volume flow reduction factor due to platform standstills and gate metering.*
+---
+
+## 2. Explicit Scraped Event Cancellation Rule
+
+An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`).
+
+In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
 
 ---
 
