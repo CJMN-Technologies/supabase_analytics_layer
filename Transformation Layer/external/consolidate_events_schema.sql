@@ -125,8 +125,8 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 4: LGU Maintenance / Tree Trimming / Clearing Activities
-    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning)' THEN
+    -- Filter 4: LGU Maintenance / Tree Trimming / Clearing / Declogging Activities
+    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer)' THEN
         event_name := 'LGU Clearing & Maintenance Activity'; 
         event_category := 'infrastructure'; 
         friction_domain := 'lgu'; 

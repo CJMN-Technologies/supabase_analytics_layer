@@ -288,30 +288,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 3: Class / Exam / Transaction Suspensions (HIGHEST PRIORITY for cancellations)
-    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance)|class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office|transaction)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|sona|state\s+of\s+the\s+nation|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
-        event_name := 'Class Suspension / Holiday'; 
-        event_category := 'class_suspension'; 
-        friction_domain := 'academic'; 
-        trigger_category := 'Class Suspension / Holiday'; 
-        affects_ridership := TRUE;
-        RETURN NEXT; 
-        RETURN;
-    END IF;
-
-    -- Filter 4: LGU Maintenance / Tree Trimming / Clearing Activities
-    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning)' THEN
-        event_name := 'LGU Clearing & Maintenance Activity'; 
-        event_category := 'infrastructure'; 
-        friction_domain := 'lgu'; 
-        trigger_category := 'Road Closure / Obstruction'; 
-        affects_ridership := FALSE;
-        RETURN NEXT; 
-        RETURN;
-    END IF;
-
-    -- Filter 5: Transport Strike
-    IF v_combined ~* '(transport\s+strike|tigil\s+pasada|welga|jeepney\s+strike|piston|manibela|transport\s+group)' THEN
+    -- Filter 3: Transport Strike (HIGHEST DISRUPTION PRIORITY - evaluated before general class suspensions)
+    IF (v_combined ~* '(transport\s+strike|tigil\s+pasada|welga|jeepney\s+strike|piston|manibela|transport\s+group)')
+       AND NOT v_combined ~* '(cancel(lation|led)?\s+of\s+strike|strike\s+is\s+cancelled|call(ed)?\s+off)' THEN
         event_name := 'Transport Strike'; 
         event_category := 'transport_strike'; 
         friction_domain := 'academic'; 
@@ -321,8 +300,63 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 6: Major Arena Events
-    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|rally|pep\s+rally|game\s+day)' THEN
+    -- Filter 4: Online / Asynchronous Class Shift Modality
+    IF v_combined ~* '(online\s+(class|learning|modality)|asynchronous|shift\s+to\s+online)' THEN
+        event_name := 'Online / Asynchronous Class Shift'; 
+        event_category := 'class_suspension'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Online / Asynchronous Class Shift'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 5: Class / Exam / Transaction Suspensions & Holidays
+    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance)|class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office|transaction)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
+        event_name := 'Class Suspension / Holiday'; 
+        event_category := 'class_suspension'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Class Suspension / Holiday'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 6: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
+    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer|relief\s+goods)' THEN
+        event_name := 'LGU Clearing & Maintenance Activity'; 
+        event_category := 'infrastructure'; 
+        friction_domain := 'lgu'; 
+        trigger_category := 'LGU Municipal Clearing & Maintenance'; 
+        affects_ridership := FALSE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 7: Graduation & Commencement Rites
+    IF v_combined ~* '(graduation|commencement|baccalaureate|recognition\s+rites)' THEN
+        event_name := 'Graduation & Commencement Rites'; 
+        event_category := 'major_event'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Graduation & Commencement Rites'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 8: Civic Rally & Public Mobilization
+    IF v_combined ~* '(rally|mobilization|socmed\s+rally|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin|sona)' THEN
+        event_name := 'Civic Rally & Public Mobilization'; 
+        event_category := 'major_event'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Civic Rally & Public Mobilization'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 9: Major Arena Events / Sports Events
+    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|game\s+day|paskuhan|lantern\s+parade)' THEN
         event_name := 'Major Arena / Sports Event'; 
         event_category := 'major_event'; 
         friction_domain := 'academic'; 
@@ -545,6 +579,11 @@ BEGIN
         DELETE FROM external.events_consolidated WHERE source_id = OLD.id AND source_table = 'academic_lgu_events';
         RETURN OLD;
     END IF;
+
+    IF NEW.is_cancelled IS TRUE THEN
+        DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
+        RETURN NEW;
+    END IF;
  
     SELECT * INTO v_result
     FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category);
@@ -601,9 +640,13 @@ BEGIN
             v_result.trigger_category,
             CASE
                 WHEN v_result.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
+                WHEN v_result.event_category = 'transport_strike' THEN 0.9
                 ELSE v_weight
             END,
-            v_weight,
+            CASE
+                WHEN v_result.event_category = 'transport_strike' THEN 0.9
+                ELSE v_weight
+            END,
             NEW.post_date,
             now()
         )

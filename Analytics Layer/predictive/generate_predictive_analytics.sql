@@ -681,11 +681,18 @@ SELECT
   END as station_id,
   s.station_name,
   s.flow_type,
-  COALESCE(c.current_occupancy, tb.median_volume) as current_occupancy,
-  COALESCE(p.predicted_occupancy, tb.median_volume) as predicted_occupancy,
+  CASE 
+    WHEN EXTRACT(HOUR FROM (t.current_hour || ':00')::time) < 5 OR EXTRACT(HOUR FROM (t.current_hour || ':00')::time) >= 23 THEN 0
+    ELSE COALESCE(c.current_occupancy, tb.median_volume, 0)
+  END as current_occupancy,
+  CASE 
+    WHEN EXTRACT(HOUR FROM (t.current_hour || ':00')::time) < 5 OR EXTRACT(HOUR FROM (t.current_hour || ':00')::time) >= 23 THEN 0
+    ELSE COALESCE(p.predicted_occupancy, tb.median_volume, 0)
+  END as predicted_occupancy,
   GREATEST(tb.warning_threshold, 100) as threshold,
   CASE 
-    -- Non-operational / Off-peak minimal volume check (< 50 passengers)
+    -- Operational Hours Mask (Gates Closed between 11:00 PM and 4:59 AM)
+    WHEN EXTRACT(HOUR FROM (t.current_hour || ':00')::time) < 5 OR EXTRACT(HOUR FROM (t.current_hour || ':00')::time) >= 23 THEN 0.00
     WHEN COALESCE(tb.warning_threshold, 0) < 50 AND COALESCE(p.predicted_occupancy, c.current_occupancy, tb.median_volume, 0) < 50 THEN 
       ROUND((COALESCE(p.predicted_occupancy, c.current_occupancy, tb.median_volume, 0)::numeric / 500.0) * 100.0, 2)
     WHEN COALESCE(tb.warning_threshold, 0) = 0 OR COALESCE(p.predicted_occupancy, tb.median_volume, 0) = 0 THEN 0.00
@@ -697,6 +704,7 @@ SELECT
       ROUND(90.0 + ((COALESCE(p.predicted_occupancy, tb.median_volume) - tb.critical_threshold)::numeric / NULLIF(GREATEST(tb.critical_threshold, 100), 0)) * 10.0, 2)
   END as capacity_percentage,
   CASE 
+    WHEN EXTRACT(HOUR FROM (t.current_hour || ':00')::time) < 5 OR EXTRACT(HOUR FROM (t.current_hour || ':00')::time) >= 23 THEN 'Normal'
     WHEN COALESCE(tb.warning_threshold, 0) < 50 AND COALESCE(p.predicted_occupancy, c.current_occupancy, tb.median_volume, 0) < 50 THEN 'Normal'
     WHEN COALESCE(tb.warning_threshold, 0) = 0 OR COALESCE(p.predicted_occupancy, tb.median_volume, 0) = 0 THEN 'Normal'
     WHEN COALESCE(p.predicted_occupancy, tb.median_volume) >= GREATEST(tb.critical_threshold, 50) THEN 'Critical'
