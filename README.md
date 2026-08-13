@@ -140,7 +140,7 @@ node run_pipeline.js
 
 ### 5c. Analytics Layer Views (Dashboard Endpoints)
 Exposed in the `"Analytics"` schema for direct REST API client queries:
-*   `"Analytics".descriptive_live_event_feed` (Live event feed & trigger aggregation)
+*   `"Analytics".descriptive_live_event_feed` (Live event feed & trigger aggregation; enforces 3-stage architectural sequence by querying Academic/LGU triggers directly from `external.events_consolidated` after friction weight calculation and station normalization, combined with `external.weather_current` and `gcs.incidents`).
 *   `"Analytics".descriptive_model_auditing_drift_tracking` (Model auditing actuals vs forecasts comparison)
 *   `"Analytics".predictive_topological_route_map` (Node status classification for topological map)
 *   `"Analytics".predictive_passenger_volume_forecast_24h` (Hourly rolling 24h window)

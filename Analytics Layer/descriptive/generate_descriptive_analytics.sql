@@ -230,51 +230,23 @@ SELECT weather_current.id AS trigger_id,
 
 UNION ALL
 
- SELECT min(academic_lgu_events.id) AS trigger_id,
+ SELECT min(ec.id) AS trigger_id,
         CASE
-            WHEN (academic_lgu_events.category = 'lgu'::text) THEN 'lgu'::text
+            WHEN (ec.event_category = 'lgu'::text OR ec.friction_domain = 'lgu'::text) THEN 'lgu'::text
             ELSE 'academic'::text
         END AS source_type,
-    string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) AS source,
-    ((('Station: '::text ||
+    string_agg(DISTINCT ec.source_name, ' / '::text) AS source,
+    (('Station: '::text || string_agg(DISTINCT ec.station, ', '::text)) || ' - '::text || COALESCE(ec.event_name, 'Event Notice'::text)) AS message,
+    max(COALESCE(ec.announcement_time, ec.updated_at)) AS "time",
         CASE
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Manila%'::text) OR (string_agg(DISTINCT academic_lgu_events.station, ', '::text) = ANY (ARRAY['Recto'::text, 'Legarda'::text, 'Pureza'::text, 'V. Mapa'::text]))) THEN 'Recto, Legarda, Pureza, V. Mapa'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%San Juan%'::text) OR (string_agg(DISTINCT academic_lgu_events.station, ', '::text) = 'J. Ruiz'::text)) THEN 'J. Ruiz'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Quezon%'::text) OR (string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%QC%'::text) OR (string_agg(DISTINCT academic_lgu_events.station, ', '::text) = ANY (ARRAY['Gilmore'::text, 'Betty Go-Belmonte'::text, 'Cubao'::text, 'Anonas'::text, 'Katipunan'::text]))) THEN 'Gilmore, Betty Go-Belmonte, Cubao, Anonas, Katipunan'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Marikina%'::text) OR (string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Pasig%'::text)) THEN 'Santolan, Marikina-Pasig'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Antipolo%'::text) OR (string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Cainta%'::text)) THEN 'Marikina-Pasig, Antipolo'::text
-            ELSE string_agg(DISTINCT academic_lgu_events.station, ', '::text)
-        END) || ' - '::text) || COALESCE(academic_lgu_events.event_name, 'Event Notice'::text)) AS message,
-    max(COALESCE(academic_lgu_events.post_date, academic_lgu_events.scraped_at)) AS "time",
-        CASE
-            WHEN ((lower(COALESCE(academic_lgu_events.event_name, ''::text)) ~~ '%suspension%'::text) OR (lower(COALESCE(academic_lgu_events.event_name, ''::text)) ~~ '%walang pasok%'::text) OR (lower(COALESCE(academic_lgu_events.event_name, ''::text)) ~~ '%red%'::text)) THEN 'critical'::text
+            WHEN ((lower(COALESCE(ec.event_name, ''::text)) LIKE '%suspension%'::text) OR (lower(COALESCE(ec.event_name, ''::text)) LIKE '%walang pasok%'::text) OR (lower(COALESCE(ec.event_name, ''::text)) LIKE '%red%'::text) OR (max(ec.normalized_score) >= 1.0)) THEN 'critical'::text
             ELSE 'warning'::text
         END AS urgency,
-        CASE
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Manila%'::text) OR (string_agg(DISTINCT academic_lgu_events.station, ', '::text) = ANY (ARRAY['Recto'::text, 'Legarda'::text, 'Pureza'::text, 'V. Mapa'::text]))) THEN 'Recto, Legarda, Pureza, V. Mapa'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%San Juan%'::text) OR (string_agg(DISTINCT academic_lgu_events.station, ', '::text) = 'J. Ruiz'::text)) THEN 'J. Ruiz'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Quezon%'::text) OR (string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%QC%'::text) OR (string_agg(DISTINCT academic_lgu_events.station, ', '::text) = ANY (ARRAY['Gilmore'::text, 'Betty Go-Belmonte'::text, 'Cubao'::text, 'Anonas'::text, 'Katipunan'::text]))) THEN 'Gilmore, Betty Go-Belmonte, Cubao, Anonas, Katipunan'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Marikina%'::text) OR (string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Pasig%'::text)) THEN 'Santolan, Marikina-Pasig'::text
-            WHEN ((string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Antipolo%'::text) OR (string_agg(DISTINCT academic_lgu_events.source_name, ' / '::text) ~~* '%Cainta%'::text)) THEN 'Marikina-Pasig, Antipolo'::text
-            ELSE string_agg(DISTINCT academic_lgu_events.station, ', '::text)
-        END AS station_name,
-    max(academic_lgu_events.source_url) AS source_url,
-    max(academic_lgu_events.post_text) AS description
-   FROM external.academic_lgu_events
-  WHERE academic_lgu_events.is_cancelled IS NOT TRUE 
-    AND (
-      (lower(COALESCE(academic_lgu_events.event_name, '')) || ' ' || lower(COALESCE(academic_lgu_events.post_text, ''))) !~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer)'
-      OR (lower(COALESCE(academic_lgu_events.event_name, '')) || ' ' || lower(COALESCE(academic_lgu_events.post_text, ''))) ~* '(suspend|walang\s+pasok|no\s+class|strike|tigil\s+pasada|welga)'
-    )
-    AND (
-      (academic_lgu_events.post_date AT TIME ZONE 'Asia/Manila')::date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
-      OR academic_lgu_events.event_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date::text
-      OR (
-        academic_lgu_events.event_date LIKE '%to%'
-        AND CASE WHEN SUBSTRING(academic_lgu_events.event_date FROM '^\d{4}-\d{2}-\d{2}') IS NOT NULL THEN SUBSTRING(academic_lgu_events.event_date FROM '^\d{4}-\d{2}-\d{2}')::date ELSE NULL END <= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
-        AND CASE WHEN SUBSTRING(academic_lgu_events.event_date FROM '\d{4}-\d{2}-\d{2}$') IS NOT NULL THEN SUBSTRING(academic_lgu_events.event_date FROM '\d{4}-\d{2}-\d{2}$')::date ELSE NULL END >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
-      )
-    )
-  GROUP BY academic_lgu_events.event_date, academic_lgu_events.category, academic_lgu_events.event_name;
+    string_agg(DISTINCT ec.station, ', '::text) AS station_name,
+    max(ec.source_url) AS source_url,
+    max(ec.description) AS description
+   FROM external.events_consolidated ec
+  WHERE ec.event_date = ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'::text))::date
+  GROUP BY ec.event_date, ec.event_category, ec.friction_domain, ec.event_name;
 
 GRANT SELECT ON "Analytics".descriptive_live_event_feed TO anon, authenticated, service_role;

@@ -77,7 +77,8 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 CREATE OR REPLACE FUNCTION external.classify_event_from_text(
     p_post_text text,
     p_image_text text,
-    p_category text
+    p_category text,
+    p_event_name text DEFAULT NULL
 ) RETURNS TABLE (
     event_name text,
     event_category text,
@@ -88,7 +89,7 @@ CREATE OR REPLACE FUNCTION external.classify_event_from_text(
 DECLARE
     v_combined text;
 BEGIN
-    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, ''));
+    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_event_name, ''));
 
     -- Filter 1: Planning / Administrative meetings
     IF (v_combined ~* '(coordination\s+meeting|ocular\s+visit|ocular\s+meeting|planning\s+meeting|planning\s+session|preparatory\s+meeting|committee\s+meeting|coordination\s+visit|pre-event\s+coordination)'
@@ -240,7 +241,8 @@ BEGIN
             WHEN v_month IN ('december', 'dec') THEN 12
         END;
         
-        IF v_year IS NULL THEN
+        -- If year is missing or in the past (stale extraction), default to post creation year (2026)
+        IF v_year IS NULL OR v_year < EXTRACT(YEAR FROM v_fallback)::integer THEN
             v_year := EXTRACT(YEAR FROM v_fallback)::integer;
         END IF;
 
