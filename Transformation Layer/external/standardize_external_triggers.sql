@@ -313,7 +313,7 @@ BEGIN
 
     -- Filter 5: Class / Exam / Transaction Suspensions & Holidays
     IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance)|class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office|transaction)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
-        event_name := 'Class Suspension / Holiday'; 
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension / Holiday'); 
         event_category := 'class_suspension'; 
         friction_domain := 'academic'; 
         trigger_category := 'Class Suspension / Holiday'; 
@@ -324,7 +324,7 @@ BEGIN
 
     -- Filter 6: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
     IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer|relief\s+goods)' THEN
-        event_name := 'LGU Clearing & Maintenance Activity'; 
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Clearing & Maintenance Activity'); 
         event_category := 'infrastructure'; 
         friction_domain := 'lgu'; 
         trigger_category := 'LGU Municipal Clearing & Maintenance'; 
@@ -586,7 +586,7 @@ BEGIN
     END IF;
  
     SELECT * INTO v_result
-    FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category);
+    FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category, NEW.event_name);
  
     IF v_result.affects_ridership = FALSE OR v_result.affects_ridership IS NULL THEN
         DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
@@ -966,7 +966,7 @@ DECLARE
 BEGIN
     FOR v_row IN SELECT * FROM external.academic_lgu_events LOOP
         SELECT * INTO v_result
-        FROM external.classify_event_from_text(v_row.post_text, v_row.image_text, v_row.category);
+        FROM external.classify_event_from_text(v_row.post_text, v_row.image_text, v_row.category, v_row.event_name);
  
         IF v_result.affects_ridership = FALSE OR v_result.affects_ridership IS NULL THEN
             CONTINUE;

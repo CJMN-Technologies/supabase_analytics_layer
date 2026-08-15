@@ -373,7 +373,7 @@ BEGIN
     END IF;
 
     SELECT * INTO v_result
-    FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category);
+    FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category, NEW.event_name);
 
     IF v_result.affects_ridership = FALSE OR v_result.affects_ridership IS NULL THEN
         DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';

@@ -219,7 +219,8 @@ SELECT weather_current.id AS trigger_id,
     (((((((('Station: '::text || weather_current.station) || ' - Temp: '::text) || weather_current.temperature) || '°C, Rain: '::text) || weather_current.rainfall_mm) || 'mm ('::text) || COALESCE(NULLIF(weather_current.computed_rainfall_level, 'None'::text), 'Normal'::text)) || ')'::text) AS message,
     weather_current.observed_at AS "time",
         CASE
-            WHEN ((weather_current.rainfall_mm >= 15.0) OR (weather_current.computed_rainfall_level = ANY (ARRAY['Heavy'::text, 'Torrential'::text, 'Monsoon'::text]))) THEN 'warning'::text
+            WHEN ((weather_current.rainfall_mm >= 30.0) OR (weather_current.computed_rainfall_level = ANY (ARRAY['Torrential'::text, 'Monsoon'::text]))) THEN 'critical'::text
+            WHEN ((weather_current.rainfall_mm >= 15.0) OR (weather_current.computed_rainfall_level = 'Heavy'::text)) THEN 'warning'::text
             ELSE 'low'::text
         END AS urgency,
     weather_current.station AS station_name,
@@ -239,8 +240,14 @@ UNION ALL
     (('Station: '::text || string_agg(DISTINCT ec.station, ', '::text)) || ' - '::text || COALESCE(ec.event_name, 'Event Notice'::text)) AS message,
     max(COALESCE(ec.announcement_time, ec.updated_at)) AS "time",
         CASE
-            WHEN ((lower(COALESCE(ec.event_name, ''::text)) LIKE '%suspension%'::text) OR (lower(COALESCE(ec.event_name, ''::text)) LIKE '%walang pasok%'::text) OR (lower(COALESCE(ec.event_name, ''::text)) LIKE '%red%'::text) OR (max(ec.normalized_score) >= 1.0)) THEN 'critical'::text
-            ELSE 'warning'::text
+            -- Tier 1 (CRITICAL, Red): Normalized Score >= 0.80 or explicit physical disruptions
+            WHEN ((lower(COALESCE(ec.event_name, ''::text)) ~* '(suspension|walang pasok|red alert|tigil pasada|strike|monsoon|typhoon)') 
+                  OR (max(ec.normalized_score) >= 0.80)) THEN 'critical'::text
+            -- Tier 2 (WARNING, Amber): Normalized Score between 0.45 and 0.79 or large crowd surges
+            WHEN ((max(ec.normalized_score) >= 0.45) 
+                  OR (lower(COALESCE(ec.event_name, ''::text)) ~* '(arena|concert|heavy rain|flood|commencement|graduation|rally)')) THEN 'warning'::text
+            -- Tier 3 (INFORMATIONAL, Sky-Blue): Routine calendar milestones, exams, orientations, registrations
+            ELSE 'low'::text
         END AS urgency,
     string_agg(DISTINCT ec.station, ', '::text) AS station_name,
     max(ec.source_url) AS source_url,
