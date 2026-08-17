@@ -71,7 +71,9 @@ BEGIN
         RETURN INITCAP(p_station);
     END IF;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$$ LANGUAGE plpgsql 
+SET search_path = public, pg_temp
+IMMUTABLE;
 
 -- 1b. Function to classify scraped text into event_category, friction_domain, and trigger_category
 CREATE OR REPLACE FUNCTION external.classify_event_from_text(
@@ -85,7 +87,11 @@ CREATE OR REPLACE FUNCTION external.classify_event_from_text(
     friction_domain text,
     trigger_category text,
     affects_ridership boolean
-) AS $$
+) 
+LANGUAGE plpgsql 
+SET search_path = public, pg_temp
+IMMUTABLE
+AS $$
 DECLARE
     v_combined text;
 BEGIN
@@ -245,7 +251,11 @@ CREATE OR REPLACE FUNCTION external.extract_event_date_from_text(
     p_post_text text,
     p_image_text text,
     p_post_date timestamp with time zone
-) RETURNS date AS $$
+) RETURNS date 
+LANGUAGE plpgsql 
+SET search_path = public, pg_temp
+IMMUTABLE
+AS $$
 DECLARE
     v_combined text;
     v_f1_match text[];

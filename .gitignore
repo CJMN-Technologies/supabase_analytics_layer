@@ -27,3 +27,8 @@ Scraper/
 Analytics/
 runs.json
 scratch/test_*.py
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class

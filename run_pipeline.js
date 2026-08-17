@@ -487,10 +487,7 @@ async function main() {
         console.log(`✅ Resolved to IPv4 (lookup): ${address}`);
         dbHost = address;
       } catch (err2) {
-        console.warn(`⚠️ DNS lookup failed: ${err2.message}. Utilizing known Singapore Supabase IPv4 fallback: 3.0.129.213`);
-        if (dbHost === 'db.kthioobzfyepokrrykem.supabase.co') {
-          dbHost = '3.0.129.213';
-        }
+        console.warn(`⚠️ DNS lookup failed: ${err2.message}.`);
       }
     }
   }
