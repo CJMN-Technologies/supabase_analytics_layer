@@ -33,11 +33,18 @@ Every weight in `external.friction_weight` is directly backed by open-access NCR
 
 ---
 
-## 2. Explicit Scraped Event Cancellation Rule
+## 2. Explicit Scraped Event Cancellation & Classification Rules
 
+### 🛡️ Explicit Cancellation Rule
 An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`).
 
 In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
+
+### 🔍 Resilient Pattern Matching & Hashtag Support
+To prevent false exclusions of authentic disruption advisories, `external.classify_event_from_text` employs generalized regular expressions:
+- **Hashtag & Spacing Agnostic:** Handles `#WalangPasok` / `#walangpasok` via zero-or-more whitespace matches (`walang\s*pasok`).
+- **Flexible Verb & Tense Phrasing:** Removes restrictive verb locks (`is|are`), matching any tense or phrasing (`class(es)?\s+.*suspend`, `work\s+.*suspend`, `suspend(ed|ing|sion)?\s+.*(class|office|work|transaction|operation)`).
+- **Modality Shifts:** Captures synchronous and asynchronous shifts (`shift\s+to\s+(online|asynchronous)`, `online\s+synchronous\s+classes`, `remote\s+learning`).
 
 ---
 

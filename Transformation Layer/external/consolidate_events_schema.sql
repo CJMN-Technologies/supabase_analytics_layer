@@ -94,8 +94,8 @@ BEGIN
     -- Filter 1: Planning / Administrative meetings
     IF (v_combined ~* '(coordination\s+meeting|ocular\s+visit|ocular\s+meeting|planning\s+meeting|planning\s+session|preparatory\s+meeting|committee\s+meeting|coordination\s+visit|pre-event\s+coordination)'
         OR (v_combined ~* '(meeting|ocular|planning|preparation|discussion)' 
-            AND NOT v_combined ~* '(suspend|walang\s+pasok|no\s+class|strike|tigil\s+pasada|welga)')) THEN
-        event_name := 'Planning/Coordination Meeting';
+            AND NOT v_combined ~* '(suspend|walang\s*pasok|no\s+class|strike|tigil\s+pasada|welga)')) THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Planning/Coordination Meeting');
         event_category := 'administrative';
         friction_domain := NULL;
         trigger_category := NULL;
@@ -106,7 +106,7 @@ BEGIN
 
     -- Filter 2: Administrative / Internal notices
     IF v_combined ~* '(promotions?\s+board|posting\s+of.*(grade|result)|deliberation|grade\s+release|final\s+grade|drop(ping)?\s+of\s+subject|leave\s+of\s+absence|filing\s+of\s+leave)' THEN
-        event_name := 'Administrative/Internal Notice';
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Administrative/Internal Notice');
         event_category := 'administrative';
         friction_domain := NULL;
         trigger_category := NULL;
@@ -115,31 +115,10 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 3: Class / Exam / Transaction Suspensions (HIGHEST PRIORITY for cancellations)
-    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance)|class(es)?\s+.*(is|are)\s+suspend|suspend(ed|ing)?\s+(class|office|transaction)|suspension\s+of\s+(all\s+|onsite\s+|face-to-face\s+)?classes|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|sona|state\s+of\s+the\s+nation|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
-        event_name := 'Class Suspension / Holiday'; 
-        event_category := 'class_suspension'; 
-        friction_domain := 'academic'; 
-        trigger_category := 'Class Suspension / Holiday'; 
-        affects_ridership := TRUE;
-        RETURN NEXT; 
-        RETURN;
-    END IF;
-
-    -- Filter 4: LGU Maintenance / Tree Trimming / Clearing / Declogging Activities
-    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer)' THEN
-        event_name := 'LGU Clearing & Maintenance Activity'; 
-        event_category := 'infrastructure'; 
-        friction_domain := 'lgu'; 
-        trigger_category := 'Road Closure / Obstruction'; 
-        affects_ridership := FALSE;
-        RETURN NEXT; 
-        RETURN;
-    END IF;
-
-    -- Filter 5: Transport Strike
-    IF v_combined ~* '(transport\s+strike|tigil\s+pasada|welga|jeepney\s+strike|piston|manibela|transport\s+group)' THEN
-        event_name := 'Transport Strike'; 
+    -- Filter 3: Transport Strike (HIGHEST DISRUPTION PRIORITY)
+    IF (v_combined ~* '(transport\s+strike|tigil\s+pasada|welga|jeepney\s+strike|piston|manibela|transport\s+group)')
+       AND NOT v_combined ~* '(cancel(lation|led)?\s+of\s+strike|strike\s+is\s+cancelled|call(ed)?\s+off)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Nationwide Transport Strike (MANIBELA Advisory)'); 
         event_category := 'transport_strike'; 
         friction_domain := 'academic'; 
         trigger_category := 'Transport Strike'; 
@@ -148,9 +127,42 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 6: Major Arena Events
-    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|rally|pep\s+rally|game\s+day)' THEN
-        event_name := 'Major Arena / Sports Event'; 
+    -- Filter 4: Online / Asynchronous Modality Shift
+    IF v_combined ~* '(shift\s+to\s+(online|asynchronous)|asynchronous\s+(classes|modality|learning)|online\s+(classes|modality|learning|synchronous)|remote\s+learning)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Shift to Online / Asynchronous Modality'); 
+        event_category := 'class_suspension'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Online / Asynchronous Class Shift'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 5: Class / Exam / Transaction / Work Suspensions & Holidays (Broadened to remove verb locks and support hashtags)
+    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance|work|office)|class(es)?\s+.*suspend|work\s+.*suspend|suspend(ed|ing|sion)?\s+.*(class|office|transaction|work|operation)|walang\s*pasok|no\s+class(es)?|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension / Advisory'); 
+        event_category := 'class_suspension'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Class Suspension / Holiday'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 6: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
+    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer|relief\s+goods)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Clearing & Maintenance Activity'); 
+        event_category := 'infrastructure'; 
+        friction_domain := 'lgu'; 
+        trigger_category := 'LGU Municipal Clearing & Maintenance'; 
+        affects_ridership := FALSE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 7: Major Arena Events
+    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|rally|pep\s+rally|game\s+day|paskuhan|lantern\s+parade)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Major Arena / Sports Event'); 
         event_category := 'major_event'; 
         friction_domain := 'academic'; 
         trigger_category := 'Major Arena Event'; 
@@ -159,10 +171,32 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 7: Examination Period (ONLY if NOT cancelled/suspended)
+    -- Filter 8: Graduation & Commencement Rites
+    IF v_combined ~* '(commencement|graduation|baccalaureate|solemn\s+investiture|hooding|closing\s+exercises)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Graduation & Commencement Rites'); 
+        event_category := 'major_event'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Graduation & Commencement Rites'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 9: Civic Rallies & Public Mobilizations
+    IF v_combined ~* '(sona\s+rally|protest|mobilization|mass\s+gathering|labor\s+rally|peace\s+rally|march\s+for|piket|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Civic Rally & Public Mobilization'); 
+        event_category := 'major_event'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Civic Rally & Public Mobilization'; 
+        affects_ridership := TRUE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 10: Examination Period (ONLY if NOT cancelled/suspended)
     IF v_combined ~* '(exam(ination)?s?|midterm|finals?\s+(exam|week)|prelim(inary)?\s+exam|long\s+exam|qualifying\s+exam)' 
-       AND NOT v_combined ~* '(cancel|suspend|walang\s+pasok|no\s+class)' THEN
-        event_name := 'Examination Period'; 
+       AND NOT v_combined ~* '(cancel|suspend|walang\s*pasok|no\s+class)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Examination Period'); 
         event_category := 'exam_week'; 
         friction_domain := 'academic'; 
         trigger_category := 'University Exam Week'; 
@@ -171,15 +205,16 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 8: Academic Start / Enrollment
-    IF v_combined ~* '(enrollment|orientation|first\s+day\s+of\s+(class|regular\s+class)|start\s+of\s+class|opening\s+of\s+class)' THEN
-        RETURN NEXT; RETURN;
-    END IF;
-
-    event_name := 'Unclassified'; event_category := 'unclassified'; friction_domain := NULL; trigger_category := NULL; affects_ridership := FALSE;
-    RETURN NEXT; RETURN;
+    -- Default fallback
+    event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Regular Academic Schedule');
+    event_category := 'regular_class_day';
+    friction_domain := 'academic';
+    trigger_category := 'Regular Class Day';
+    affects_ridership := FALSE;
+    RETURN NEXT;
+    RETURN;
 END;
-$$ LANGUAGE plpgsql STABLE;
+$$ LANGUAGE plpgsql IMMUTABLE;
 
 -- 1b_2. Extract event date from post/image text with timezone safety and relative offset support
 CREATE OR REPLACE FUNCTION external.extract_event_date_from_text(

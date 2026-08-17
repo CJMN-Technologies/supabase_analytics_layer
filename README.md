@@ -209,8 +209,9 @@ Every trigger weight in `external.friction_weight` is directly backed by publish
 | **pagasa** | **Light/Moderate Rain** | **0.35** | *Factors affecting travel behavior during flood events (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
 | **pagasa** | **Clear / Fair** | **0.00** | *Metro Manila Urban Transportation Integration Study (JICA)* | [JICA Study (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
 
-### 🛡️ Explicit Scraped Event Cancellation Rule
-An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`). In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
+### 🛡️ Explicit Scraped Event Cancellation & Classification Rules
+- **Explicit Cancellation Rule:** An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`). In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
+- **Resilient Regex Classification:** `external.classify_event_from_text` employs generalized regular expressions to eliminate verb-tense locks (`is|are`), support hashtag variations (`#WalangPasok` via `walang\s*pasok`), accommodate general suspension phrasing (`class(es)?\s+.*suspend`, `work\s+.*suspend`), and capture online synchronous/asynchronous shifts.
 
 *Full academic attributions and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
 
