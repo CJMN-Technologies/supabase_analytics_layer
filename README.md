@@ -69,7 +69,9 @@ Triggers process qualitative logs on-write and save them under short, unique IDs
   - Scraped events: `SCR-[CATEGORY_CODE]-[MMDD]-[RAW_ID]`
   - Calendar events: `CAL-[SCHOOL_ACRONYM]-[MMDD]-[ROW_ID]`
   - GCS Mobile Incidents: `INC-[MMDD]-[INCIDENT_ID]`
-  - Auto-normalizes class suspension events to binary score `1.0` (Step 3c).
+  - Auto-normalizes class suspension and online modality shift events to binary score `1.0` (Step 3c).
+  - Unofficial student council petitions, academic leniency requests, and ID printing schedules are automatically categorized as non-disruptive administrative items (`affects_ridership = FALSE`), preventing false-positive passenger surges.
+  - Position-aware regex date parser extracts the earliest primary event date (prioritizing Day-Month and Month-Day based on text appearance) to avoid picking up incidental holiday mentions in memo footnotes.
   - Automatically deduplicates and updates existing rows `ON CONFLICT (id) DO UPDATE` to prevent data duplication.
 - **Weather Consolidated (`external.weather_consolidated`):**
   - Weather Current: `WTH-CUR-[STATION]`

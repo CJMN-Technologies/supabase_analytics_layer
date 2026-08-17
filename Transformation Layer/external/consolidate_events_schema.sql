@@ -91,10 +91,34 @@ DECLARE
 BEGIN
     v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_event_name, ''));
 
-    -- Filter 1: Planning / Administrative meetings
+    -- Filter 0: Student Council Petitions / Appeals / Leniency / Relief Requests (Requests/Advocacy, NOT confirmed official suspensions)
+    IF v_combined ~* '(petition\s+(to|for|letter)|submitted\s+(a\s+)?petition|urging\s+the\s+administration|requests?\s+the\s+suspension|petitioning\s+for|petition\s+letter|call\s+for\s+suspension|urgent\s+requests?|sent\s+a\s+letter\s+to\s+the\s+(office|administration|chancellor)|requests?\s+(academic\s+)?leniency|appeal(s|ing)?\s+for\s+leniency|call\s+on\s+the\s+university\s+administration|panawagan\s+ng\s+(student\s+council|konseho)|usc\s+has\s+requested)'
+       AND NOT v_combined ~* '(official\s+(announcement|declaration|advisory)|president\s+has\s+declared|office\s+of\s+the\s+president\s+memo|executive\s+order)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Student Council Petition / Advocacy');
+        event_category := 'administrative';
+        friction_domain := NULL;
+        trigger_category := NULL;
+        affects_ridership := FALSE;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    -- Filter 1: Student ID transactions, Processing, Claiming & Printing (Administrative notices, only if not shifting/suspending classes)
+    IF v_combined ~* '(id\s+printing|id\s+processing|id\s+claiming|id\s+issuance|freshm(an|en)\s+id|schedule\s+for\s+id|distribution\s+of\s+id)'
+       AND NOT v_combined ~* '(shift\s+to\s+(online|asynchronous|alternative)|alternative\s+delivery\s+mode|class(es)?\s+.*(suspend|shifted)|suspension\s+of\s+(campus\s+operations|classes)|walang\s*pasok|no\s+class)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Student ID Processing Advisory');
+        event_category := 'administrative';
+        friction_domain := NULL;
+        trigger_category := NULL;
+        affects_ridership := FALSE;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    -- Filter 2: Planning / Administrative meetings (Excludes modality shifts and confirmed suspensions)
     IF (v_combined ~* '(coordination\s+meeting|ocular\s+visit|ocular\s+meeting|planning\s+meeting|planning\s+session|preparatory\s+meeting|committee\s+meeting|coordination\s+visit|pre-event\s+coordination)'
-        OR (v_combined ~* '(meeting|ocular|planning|preparation|discussion)' 
-            AND NOT v_combined ~* '(suspend|walang\s*pasok|no\s+class|strike|tigil\s+pasada|welga)')) THEN
+        OR (v_combined ~* '(meeting|ocular|planning|discussion)' 
+            AND NOT v_combined ~* '(suspend|suspens|walang\s*pasok|no\s+class|strike|tigil\s+pasada|welga|shift\s+to|asynchronous|online\s+class)')) THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Planning/Coordination Meeting');
         event_category := 'administrative';
         friction_domain := NULL;
@@ -104,7 +128,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 2: Administrative / Internal notices
+    -- Filter 3: Administrative / Internal notices
     IF v_combined ~* '(promotions?\s+board|posting\s+of.*(grade|result)|deliberation|grade\s+release|final\s+grade|drop(ping)?\s+of\s+subject|leave\s+of\s+absence|filing\s+of\s+leave)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Administrative/Internal Notice');
         event_category := 'administrative';
@@ -115,7 +139,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 3: Transport Strike (HIGHEST DISRUPTION PRIORITY)
+    -- Filter 4: Transport Strike (HIGHEST DISRUPTION PRIORITY)
     IF (v_combined ~* '(transport\s+strike|tigil\s+pasada|welga|jeepney\s+strike|piston|manibela|transport\s+group)')
        AND NOT v_combined ~* '(cancel(lation|led)?\s+of\s+strike|strike\s+is\s+cancelled|call(ed)?\s+off)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Nationwide Transport Strike (MANIBELA Advisory)'); 
@@ -127,8 +151,8 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 4: Online / Asynchronous Modality Shift
-    IF v_combined ~* '(shift\s+to\s+(online|asynchronous)|asynchronous\s+(classes|modality|learning)|online\s+(classes|modality|learning|synchronous)|remote\s+learning)' THEN
+    -- Filter 5: Online / Asynchronous Modality Shift
+    IF v_combined ~* '(shift\s+to\s+(online|asynchronous)|asynchronous\s+(classes|modality|learning)|online\s+(classes|modality|learning|synchronous)|remote\s+learning|alternative\s+delivery\s+mode|\badm\b)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Shift to Online / Asynchronous Modality'); 
         event_category := 'class_suspension'; 
         friction_domain := 'academic'; 
@@ -138,8 +162,8 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 5: Class / Exam / Transaction / Work Suspensions & Holidays (Broadened to remove verb locks and support hashtags)
-    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance|work|office)|class(es)?\s+.*suspend|work\s+.*suspend|suspend(ed|ing|sion)?\s+.*(class|office|transaction|work|operation)|walang\s*pasok|no\s+class(es)?|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
+    -- Filter 6: Class / Exam / Transaction / Work Suspensions & Holidays
+    IF v_combined ~* '((class(es)?|klase|work|trabaho|office|opisina|school|campus|transaction(s)?|operation(s)?)\s+.*(suspend|suspens|cancelled)|(suspend(ed|ing|sion)?|suspensyon|kanselado|cancel(led|lation)?)\s+.*(class|klase|work|office|school|campus|transaction|operation|onsite)|walang\s*pasok|no\s+class(es)?|in-person\s+class(es)?\s+suspension|cancel(lation|led)?\s+of\s+(medical\s+)?exam|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension / Advisory'); 
         event_category := 'class_suspension'; 
         friction_domain := 'academic'; 
@@ -149,7 +173,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 6: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
+    -- Filter 7: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
     IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer|relief\s+goods)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Clearing & Maintenance Activity'); 
         event_category := 'infrastructure'; 
@@ -160,7 +184,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 7: Major Arena Events
+    -- Filter 8: Major Arena Events
     IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|rally|pep\s+rally|game\s+day|paskuhan|lantern\s+parade)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Major Arena / Sports Event'); 
         event_category := 'major_event'; 
@@ -171,7 +195,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 8: Graduation & Commencement Rites
+    -- Filter 9: Graduation & Commencement Rites
     IF v_combined ~* '(commencement|graduation|baccalaureate|solemn\s+investiture|hooding|closing\s+exercises)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Graduation & Commencement Rites'); 
         event_category := 'major_event'; 
@@ -182,7 +206,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 9: Civic Rallies & Public Mobilizations
+    -- Filter 10: Civic Rallies & Public Mobilizations
     IF v_combined ~* '(sona\s+rally|protest|mobilization|mass\s+gathering|labor\s+rally|peace\s+rally|march\s+for|piket|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Civic Rally & Public Mobilization'); 
         event_category := 'major_event'; 
@@ -193,9 +217,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 10: Examination Period (ONLY if NOT cancelled/suspended)
+    -- Filter 11: Examination Period (ONLY if NOT cancelled/suspended)
     IF v_combined ~* '(exam(ination)?s?|midterm|finals?\s+(exam|week)|prelim(inary)?\s+exam|long\s+exam|qualifying\s+exam)' 
-       AND NOT v_combined ~* '(cancel|suspend|walang\s*pasok|no\s+class)' THEN
+       AND NOT v_combined ~* '(cancel|suspend|suspens|walang\s*pasok|no\s+class)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Examination Period'); 
         event_category := 'exam_week'; 
         friction_domain := 'academic'; 
@@ -224,7 +248,11 @@ CREATE OR REPLACE FUNCTION external.extract_event_date_from_text(
 ) RETURNS date AS $$
 DECLARE
     v_combined text;
-    v_match text[];
+    v_f1_match text[];
+    v_f2_match text[];
+    v_f1_pos integer := 0;
+    v_f2_pos integer := 0;
+    v_use_f2 boolean := false;
     v_month text;
     v_day integer;
     v_year integer;
@@ -238,29 +266,39 @@ BEGIN
     
     -- Format 1: Month Name followed by Day (e.g., July 2, 2026 or July 2)
     -- Using \y for word boundaries to prevent matching digits inside years (like matching '20' in '2026' as July 20)
-    v_match := regexp_match(
+    v_f1_match := regexp_match(
         v_combined,
         '\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?\s+\y(\d{1,2})\y(?:st|nd|rd|th)?(?:,?\s+\y(\d{4})\y)?'
     );
     
-    IF v_match IS NULL THEN
-        -- Format 2: Day followed by Month Name (e.g., 02 July 2026 or 2 July)
-        v_match := regexp_match(
-            v_combined,
-            '\y(\d{1,2})\y(?:st|nd|rd|th)?\s+\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?(?:\s+\y(\d{4})\y)?'
-        );
-        IF v_match IS NOT NULL THEN
-            v_month := v_match[2];
-            v_day := v_match[1]::integer;
-            v_year := v_match[3]::integer;
+    -- Format 2: Day followed by Month Name (e.g., 02 July 2026 or 18 Aug)
+    v_f2_match := regexp_match(
+        v_combined,
+        '\y(\d{1,2})\y(?:st|nd|rd|th)?\s+\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?(?:\s+\y(\d{4})\y)?'
+    );
+    
+    -- Compare which format appears earliest in the text
+    IF v_f1_match IS NOT NULL AND v_f2_match IS NOT NULL THEN
+        v_f1_pos := POSITION(v_f1_match[1] IN v_combined);
+        v_f2_pos := POSITION(v_f2_match[2] IN v_combined);
+        IF v_f2_pos < v_f1_pos THEN
+            v_use_f2 := true;
         END IF;
-    ELSE
-        v_month := v_match[1];
-        v_day := v_match[2]::integer;
-        v_year := v_match[3]::integer;
+    ELSIF v_f2_match IS NOT NULL THEN
+        v_use_f2 := true;
     END IF;
 
-    IF v_match IS NOT NULL THEN
+    IF v_use_f2 THEN
+        v_month := v_f2_match[2];
+        v_day := v_f2_match[1]::integer;
+        v_year := v_f2_match[3]::integer;
+    ELSIF v_f1_match IS NOT NULL THEN
+        v_month := v_f1_match[1];
+        v_day := v_f1_match[2]::integer;
+        v_year := v_f1_match[3]::integer;
+    END IF;
+
+    IF v_month IS NOT NULL THEN
         v_month_num := CASE
             WHEN v_month IN ('january', 'jan') THEN 1
             WHEN v_month IN ('february', 'feb') THEN 2
