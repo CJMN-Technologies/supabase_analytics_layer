@@ -121,6 +121,32 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Filter 1b: Medical, Clinical & Health Services / Examinations (Clinical exams distinct from academic exam weeks)
+    IF (v_combined ~* '(breast\s+exam|medical\s+exam|health\s+exam|dental\s+exam|physical\s+exam|birth\s+control|implant|clinic|friendlycare|vaccin(ation|e)|blood\s+donation|medical\s+mission|leptospirosis)'
+        OR (v_combined ~* '(examination|exam)' AND v_combined ~* '(breast|implant|clinic|friendlycare|medical\s+center|health|doctor|dental)'))
+       AND NOT v_combined ~* '(shift\s+to\s+(online|asynchronous)|walang\s*pasok|no\s+class|class(es)?\s+.*suspend)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Health / Clinical Services Advisory');
+        event_category := 'administrative';
+        friction_domain := NULL;
+        trigger_category := NULL;
+        affects_ridership := FALSE;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
+    -- Filter 1c: Public Employment, Job Fairs & Recruitment Activities (Administrative employment notices, not class suspensions)
+    IF (v_combined ~* '(job\s+fair|recruitment\s+activity|local\s+recruitment|peso\s+|public\s+employment\s+service|hiring\s+activity|career\s+fair|job\s+hiring|spes\s+)'
+        OR (v_combined ~* '(recruitment|job\s+fair)' AND v_combined ~* '(cancel|suspend|postpone|moved)'))
+       AND NOT v_combined ~* '(shift\s+to\s+(online|asynchronous)|walang\s*pasok|no\s+class|class(es)?\s+.*suspend)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Public Employment / Recruitment Advisory');
+        event_category := 'administrative';
+        friction_domain := NULL;
+        trigger_category := NULL;
+        affects_ridership := FALSE;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
     -- Filter 2: Planning / Administrative meetings (Excludes modality shifts and confirmed suspensions)
     IF (v_combined ~* '(coordination\s+meeting|ocular\s+visit|ocular\s+meeting|planning\s+meeting|planning\s+session|preparatory\s+meeting|committee\s+meeting|coordination\s+visit|pre-event\s+coordination)'
         OR (v_combined ~* '(meeting|ocular|planning|discussion)' 
@@ -223,9 +249,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 11: Examination Period (ONLY if NOT cancelled/suspended)
+    -- Filter 11: Examination Period (ONLY if NOT cancelled/suspended AND NOT clinical/health examination)
     IF v_combined ~* '(exam(ination)?s?|midterm|finals?\s+(exam|week)|prelim(inary)?\s+exam|long\s+exam|qualifying\s+exam)' 
-       AND NOT v_combined ~* '(cancel|suspend|suspens|walang\s*pasok|no\s+class)' THEN
+       AND NOT v_combined ~* '(cancel|suspend|suspens|walang\s*pasok|no\s+class|medical|physical|breast|dental|clinical|health|implant|clinic)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Examination Period'); 
         event_category := 'exam_week'; 
         friction_domain := 'academic'; 
