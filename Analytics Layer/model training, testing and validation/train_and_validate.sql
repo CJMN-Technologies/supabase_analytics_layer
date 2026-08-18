@@ -74,7 +74,7 @@ BEGIN
 
   v_rmse_percentage := ROUND((v_rmse / v_mean_volume) * 100.0, 2);
 
-  -- 4. Calculate classification metrics (Random Forest F1-score)
+  -- 4. Calculate classification metrics (Random Forest F1-score & Accuracy)
   WITH classes AS (
     SELECT 
       CASE 
@@ -125,28 +125,32 @@ BEGIN
       CASE 
         WHEN (2 * tp + fp + fn) = 0 THEN 0.0
         ELSE (2 * tp) / (2 * tp + fp + fn)
-      END as f1
+      END as f1,
+      tp
     FROM metrics_by_class
   )
   SELECT 
     ROUND((SUM(f1 * support) / NULLIF(SUM(support), 0))::numeric, 4),
-    ROUND(((SELECT SUM(tp) FROM metrics_by_class) / NULLIF((SELECT SUM(support) FROM metrics_by_class), 0)) * 100.0, 2)
+    ROUND((SUM(tp) / NULLIF(SUM(support), 0)) * 100.0, 2)
   INTO v_f1_w, v_accuracy
   FROM f1_by_class;
 
   v_recall_w := v_accuracy;
 
-  -- 5. Query Prescriptive validation metrics
+  -- 5. Automatically evaluate & log prescriptive dispatches across all stations
+  PERFORM "Analytics".evaluate_and_log_prescriptive_deployments(v_run_id, 'validation_pipeline');
+
+  -- 6. Query Prescriptive validation metrics from live audit views
   SELECT symbolic_heuristic_compliance_rate_scr INTO v_scr_val FROM "Analytics".prescriptive_compliance_audit;
   SELECT average_latency_seconds, latency_compliance_rate_pct INTO v_avg_latency, v_latency_pct FROM "Analytics".prescriptive_latency_summary;
 
-  -- 6. Grade results
+  -- 7. Grade results against MVP Targets
   v_mvp_rmse_passed := v_rmse_percentage < 5.0;
   v_mvp_f1_passed := v_f1_w >= 0.85;
   v_mvp_scr_passed := v_scr_val = 100.0;
   v_mvp_latency_passed := v_latency_pct = 100.0;
 
-  -- 7a. Dual-Write: Update latest performance snapshot table (for fast UI KPI queries)
+  -- 8a. Dual-Write: Update latest performance snapshot table (for fast UI KPI queries)
   INSERT INTO "Analytics".predictive_model_performance 
     (model_name, mape, rmse, classification_accuracy, recall_score, last_trained_timestamp)
   VALUES 
@@ -159,14 +163,14 @@ BEGIN
     recall_score = EXCLUDED.recall_score,
     last_trained_timestamp = NOW();
 
-  -- 7b. Dual-Write: Append immutable historical performance record
+  -- 8b. Dual-Write: Append immutable historical performance record
   INSERT INTO "Analytics".predictive_model_performance_history 
     (model_name, mape, rmse, classification_accuracy, recall_score, recorded_at)
   VALUES 
     ('LRT2_Volume_Forecast_XGBoost', v_mape, v_rmse, 0.0, 0.0, NOW()),
     ('LRT2_Threat_Classifier_RandomForest', 0.0, 0.0, v_accuracy, v_recall_w, NOW());
 
-  -- 7c. Dual-Write: Append full-fidelity UAT evaluation log with all input parameters & passing gates
+  -- 8c. Dual-Write: Append full-fidelity UAT evaluation log with all input parameters & passing gates
   INSERT INTO "Analytics".uat_predictive_evaluation_logs 
     (run_id, evaluation_type, model_name, dataset_split_date, sample_count, rmse, mean_volume, rmse_percentage, mape, classification_accuracy, recall_score, f1_score, target_rmse_passed, target_f1_passed, all_targets_passed, recorded_at)
   VALUES 
