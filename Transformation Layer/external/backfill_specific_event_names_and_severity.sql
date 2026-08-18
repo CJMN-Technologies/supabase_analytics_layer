@@ -165,10 +165,15 @@ CREATE OR REPLACE VIEW "Analytics"."descriptive_live_event_feed" AS
     'weather'::text AS source_type,
     'Open-Meteo Weather Service'::text AS source,
     (((((((('Station: '::text || weather_current.station) || ' - Temp: '::text) || weather_current.temperature) || '°C, Rain: '::text) || weather_current.rainfall_mm) || 'mm ('::text) || COALESCE(NULLIF(weather_current.computed_rainfall_level, 'None'::text), 'Normal'::text)) || ')'::text) AS message,
-    weather_current.observed_at AS "time",
         CASE
-            WHEN ((weather_current.rainfall_mm >= 30.0) OR (weather_current.computed_rainfall_level = ANY (ARRAY['Torrential'::text, 'Monsoon'::text]))) THEN 'critical'::text
-            WHEN ((weather_current.rainfall_mm >= 15.0) OR (weather_current.computed_rainfall_level = 'Heavy'::text)) THEN 'warning'::text
+            WHEN weather_current.rainfall_mm >= 30.0 
+              OR weather_current.computed_rainfall_level = 'Red' 
+              OR weather_current.wind_speed >= 62.0 
+              THEN 'critical'::text
+            WHEN weather_current.rainfall_mm >= 7.5 
+              OR weather_current.computed_rainfall_level IN ('Orange', 'Yellow') 
+              OR weather_current.wind_speed >= 39.0 
+              THEN 'warning'::text
             ELSE 'low'::text
         END AS urgency,
     weather_current.station AS station_name,

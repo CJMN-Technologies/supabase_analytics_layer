@@ -142,7 +142,7 @@ node run_pipeline.js
 
 ### 5c. Analytics Layer Views (Dashboard Endpoints)
 Exposed in the `"Analytics"` schema for direct REST API client queries:
-*   `"Analytics".descriptive_live_event_feed` (Live event feed & trigger aggregation with **3-tier literature-backed severity calibration**: Critical for $F_s \ge 0.80$ like class suspensions and transport strikes; Warning for $0.45 \le F_s < 0.80$ like arena concerts and heavy rain; and Informational/Low for $F_s < 0.45$ like late enrollments, regular registrations, and university exams. Preserves specific contextual event names across all academic, weather, and LGU records).
+*   `"Analytics".descriptive_live_event_feed` (Live event feed & trigger aggregation with **3-tier literature-backed severity calibration**: Critical for $F_s \ge 0.80$ like class suspensions, transport strikes, Red rainfall ($>30$mm), and Typhoon Signal 2+; Warning for $0.45 \le F_s < 0.80$ like arena concerts, Orange/Yellow rainfall ($7.5–30$mm), and Typhoon Signal 1; and Informational/Low for $F_s < 0.45$ like late enrollments, regular registrations, exams, and light/fair weather. Preserves specific contextual event names across all academic, weather, and LGU records).
 *   `"Analytics".predictive_known_events` (Consolidated notable events feed across multi-horizon forecast timelines: Horizon 0 for 24h, Horizon 1 for 1w, Horizons 2–5 for Quarters 1–4, and Horizon 6 for 1y, strictly filtered to specific, descriptive nationwide holidays and major events).
 *   `"Analytics".descriptive_model_auditing_drift_tracking` (Model auditing actuals vs forecasts comparison)
 *   `"Analytics".predictive_topological_route_map` (Node status classification for topological map)

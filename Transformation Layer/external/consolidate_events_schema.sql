@@ -97,10 +97,12 @@ DECLARE
 BEGIN
     v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_event_name, ''));
 
-    -- Filter 0: Student Council Petitions / Appeals / Leniency / Relief Requests (Requests/Advocacy, NOT confirmed official suspensions)
-    IF v_combined ~* '(petition\s+(to|for|letter)|submitted\s+(a\s+)?petition|urging\s+the\s+administration|requests?\s+the\s+suspension|petitioning\s+for|petition\s+letter|call\s+for\s+suspension|urgent\s+requests?|sent\s+a\s+letter\s+to\s+the\s+(office|administration|chancellor)|requests?\s+(academic\s+)?leniency|appeal(s|ing)?\s+for\s+leniency|call\s+on\s+the\s+university\s+administration|panawagan\s+ng\s+(student\s+council|konseho)|usc\s+has\s+requested)'
-       AND NOT v_combined ~* '(official\s+(announcement|declaration|advisory)|president\s+has\s+declared|office\s+of\s+the\s+president\s+memo|executive\s+order)' THEN
-        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Student Council Petition / Advocacy');
+    -- Filter 0: Student Council Petitions, Appeals, Position Papers & Political Statements/Critiques (Advocacy/Critiques, NOT confirmed official suspensions)
+    IF (v_combined ~* '(petition\s+(to|for|letter)|submitted\s+(a\s+)?petition|urging\s+the\s+administration|requests?\s+the\s+suspension|petitioning\s+for|petition\s+letter|call\s+for\s+suspension|urgent\s+requests?|sent\s+a\s+letter\s+to\s+the\s+(office|administration|chancellor)|requests?\s+(academic\s+)?leniency|appeal(s|ing)?\s+for\s+leniency|call\s+on\s+the\s+university\s+administration|panawagan\s+ng\s+(student\s+council|konseho)|usc\s+has\s+requested)'
+        OR (v_combined ~* '(korapsyon|pananagutan|failure\s+of\s+governance|demand\s+accountability|flood-control\s+scandal|climatejusticenow|surge\s+into\s+the\s+streets|hindi\s+nakalimot\s+ang\s+bayan|position\s+paper|press\s+statement|unity\s+statement|pahayag\s+ng\s+(konseho|estudyante|mag-aaral)|statement\s+on|solidarity\s+statement)'
+            AND v_combined ~* '(usc|student\s+council|konseho|sanggunian|cso|sandigan|bayan|estudyante|updusc)'))
+       AND NOT v_combined ~* '(official\s+(announcement|declaration|advisory)|president\s+has\s+declared|office\s+of\s+the\s+(president|chancellor)\s+memo|executive\s+order|memorandum\s+no\.)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Student Council Statement / Advocacy');
         event_category := 'administrative';
         friction_domain := NULL;
         trigger_category := NULL;
