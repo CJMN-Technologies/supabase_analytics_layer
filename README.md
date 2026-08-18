@@ -165,7 +165,7 @@ The model training, testing, and validation pipeline partitions turnstile data c
 Rather than overwriting single snapshot cells on repeat test runs, the pipeline uses a dual-write architecture to maintain immutable historical logs for certification and UAT auditing:
 * **`"Analytics".predictive_model_performance`**: Latest performance snapshot for instant dashboard KPI querying.
 * **`"Analytics".uat_predictive_evaluation_logs`**: Immutable time-series ledger capturing `run_id`, `model_name`, `sample_count`, `rmse`, `mape`, `classification_accuracy`, `f1_score`, and pass/fail gate statuses for every individual test trial.
-* **`"Analytics".uat_prescriptive_execution_logs`**: Immutable ledger capturing prescriptive decision triggers, APTA protocol IDs, ingestion vs broadcast timestamps, and microsecond latency measurements.
+* **`"Analytics".uat_prescriptive_execution_logs`**: Immutable ledger capturing prescriptive decision triggers, APTA protocol IDs, ingestion vs broadcast timestamps, and microsecond latency measurements. Evaluated on a **30-minute operational cadence** (`*/30 * * * *` in `pg_cron`), recording **2 distinct evaluation & reset entries per hour** per station.
 * **`"Analytics".vw_uat_executive_summary`**: High-level audit view exposing cumulative all-time UAT passing rates, average historical MAPE/RMSE, overall SCR compliance %, and pipeline latency SLA compliance.
 
 The validation pipeline can be executed:

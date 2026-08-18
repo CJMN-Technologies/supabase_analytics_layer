@@ -175,9 +175,9 @@ SELECT
 FROM pred_summary p
 CROSS JOIN presc_summary pr;
 
--- 5. Register Hourly Prescriptive Logging Cron Job in pg_cron
+-- 5. Register Half-Hourly Prescriptive Logging Cron Job in pg_cron (2 evaluations per hour)
 SELECT cron.schedule(
-  'hourly-prescriptive-evaluation-and-logging',
-  '0 * * * *',
+  'half-hourly-prescriptive-evaluation-and-logging',
+  '*/30 * * * *',
   'SELECT "Analytics".evaluate_and_log_prescriptive_deployments();'
 );
