@@ -4,6 +4,7 @@ import socket
 import numpy as np
 import pandas as pd
 import psycopg
+import uuid
 from dotenv import load_dotenv
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
 from sklearn.metrics import accuracy_score, recall_score, f1_score
@@ -256,6 +257,27 @@ def main():
                   ('LRT2_Threat_Classifier_RandomForest', 0.0, 0.0, %s, %s, NOW());
             """
             cur.execute(history_query, (mape, rmse, accuracy, recall_w))
+
+            # Append full-fidelity UAT evaluation log with all input parameters & passing gates
+            run_uuid = str(uuid.uuid4())
+            mvp_rmse_passed_bool = bool(rmse_percentage < 5.0)
+            mvp_f1_passed_bool = bool(f1_w >= 0.85)
+            all_passed_bool = bool(mvp_rmse_passed_bool and mvp_f1_passed_bool)
+            split_date_str = str(split_date)
+            sample_count_int = int(len(df))
+            mean_vol_float = float(test_df['historical_actual_volume'].mean())
+
+            uat_log_query = """
+                INSERT INTO "Analytics".uat_predictive_evaluation_logs 
+                  (run_id, evaluation_type, model_name, dataset_split_date, sample_count, rmse, mean_volume, rmse_percentage, mape, classification_accuracy, recall_score, f1_score, target_rmse_passed, target_f1_passed, all_targets_passed, recorded_at)
+                VALUES 
+                  (%s, 'model_validation', 'LRT2_Volume_Forecast_XGBoost', %s, %s, %s, %s, %s, %s, 0.0, 0.0, 0.0, %s, TRUE, %s, NOW()),
+                  (%s, 'model_validation', 'LRT2_Threat_Classifier_RandomForest', %s, %s, 0.0, 0.0, 0.0, 0.0, %s, %s, %s, TRUE, %s, %s, NOW());
+            """
+            cur.execute(uat_log_query, (
+                run_uuid, split_date_str, sample_count_int, rmse, mean_vol_float, rmse_percentage, mape, mvp_rmse_passed_bool, all_passed_bool,
+                run_uuid, split_date_str, sample_count_int, accuracy, recall_w, f1_w, mvp_f1_passed_bool, all_passed_bool
+            ))
             
         conn.commit()
         print("   Success: Database transaction committed.", flush=True)

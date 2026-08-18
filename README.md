@@ -154,15 +154,22 @@ Exposed in the `"Analytics"` schema for direct REST API client queries:
 *   `"Analytics".prescriptive_active_checklists` (Actionable checklists mapping tactical steps to 'Command Center Officer' or 'Ground Control Staff' roles, compiling the union of tactics from all parallel recommendations).
 *   `"Analytics".prescriptive_action_recommendations` (Actionable risk directives mapping to APTA protocol IDs `'APTA-01'` through `'APTA-06'`. Uses `UNNEST` on arrays to recommend multiple protocols simultaneously when thresholds are crossed).
 
-### 5d. Model Training & Testing Pipeline
+### 5d. Model Training, Testing & UAT Audit Pipeline
 The model training, testing, and validation pipeline partitions turnstile data chronologically (80% training / 20% test) and runs performance checks against the four operational benchmarks:
 1. **Volume Prediction Variance ($MVP_{rmse}$):** Variance (RMSE % of mean volume) must be $< 5.00\%$.
 2. **Risk Classification F1-Score ($MVP_{f1}$):** Weighted F1-score of the threat classifier must be $\ge 0.85$.
 3. **Heuristic Compliance ($MVP_{scr}$):** Symbolic Heuristic Compliance Rate (SCR) of deployments must be $100\%$.
 4. **Cloud Pipeline Latency ($MVP_{latency}$):** Ingestion-to-broadcast latency must be $< 3.0$ seconds.
 
+#### Dual-Write Append-Only UAT Metrics Architecture:
+Rather than overwriting single snapshot cells on repeat test runs, the pipeline uses a dual-write architecture to maintain immutable historical logs for certification and UAT auditing:
+* **`"Analytics".predictive_model_performance`**: Latest performance snapshot for instant dashboard KPI querying.
+* **`"Analytics".uat_predictive_evaluation_logs`**: Immutable time-series ledger capturing `run_id`, `model_name`, `sample_count`, `rmse`, `mape`, `classification_accuracy`, `f1_score`, and pass/fail gate statuses for every individual test trial.
+* **`"Analytics".uat_prescriptive_execution_logs`**: Immutable ledger capturing prescriptive decision triggers, APTA protocol IDs, ingestion vs broadcast timestamps, and microsecond latency measurements.
+* **`"Analytics".vw_uat_executive_summary`**: High-level audit view exposing cumulative all-time UAT passing rates, average historical MAPE/RMSE, overall SCR compliance %, and pipeline latency SLA compliance.
+
 The validation pipeline can be executed:
-- **Database-Natively (Recommended):** By executing `"Analytics Layer/model training, testing and validation"/train_and_validate.sql` inside the database (bypasses local Port 5432/IPv6 network connection blockades).
+- **Database-Natively (Recommended):** By calling `SELECT "Analytics".train_and_validate_models();` or executing `"Analytics Layer/model training, testing and validation"/train_and_validate.sql`.
 - **Via Python Script:** By executing `python "Analytics Layer/model training, testing and validation/train_and_validate.py"`.
 
 ---
