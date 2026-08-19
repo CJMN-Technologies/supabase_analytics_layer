@@ -107,15 +107,17 @@ def main():
     split_idx = int(total_records * 0.8)
     train_df = df.iloc[:split_idx]
     test_df = df.iloc[split_idx:]
+    split_date = test_df['date'].iloc[0] if len(test_df) > 0 else df['date'].iloc[-1]
     
     print(f"   Training Set (D_train): {len(train_df)} records (earlier 80%)", flush=True)
     print(f"   Testing Set (D_test): {len(test_df)} records (subsequent 20%)", flush=True)
+    print(f"   Split Date: {split_date}", flush=True)
     
     # 5. Feature Encoding
-    print("\n[ENCODE] Encoding categorical features...", flush=True)
+    print("\n[ENCODE] Encoding categorical features and baseline capacities...", flush=True)
     feature_cols = [
         'day_of_week', 'weather_score', 'academic_surge_score', 
-        'civic_mandate_score', 'cfi'
+        'civic_mandate_score', 'cfi', 'warning_threshold', 'critical_threshold'
     ]
     
     # One-hot encode station, flow type, and hour period
@@ -142,14 +144,14 @@ def main():
     print("\n[TRAIN] Step 3: Training models on D_train...", flush=True)
     
     # GradientBoostingRegressor (representing XGBoost volume model)
-    print("   Training GradientBoostingRegressor (Volume Model)...", flush=True)
-    reg_model = GradientBoostingRegressor(n_estimators=10, max_depth=3, random_state=42)
+    print("   Training GradientBoostingRegressor (Volume Model with 100 estimators)...", flush=True)
+    reg_model = GradientBoostingRegressor(n_estimators=100, max_depth=6, learning_rate=0.1, random_state=42)
     reg_model.fit(X_train, y_reg_train)
     print("   Volume Model training finished.", flush=True)
     
-    # RandomForestClassifier (Threat Classifier model)
-    print("   Training RandomForestClassifier (Threat Classifier)...", flush=True)
-    clf_model = RandomForestClassifier(n_estimators=10, max_depth=4, random_state=42)
+    # RandomForestClassifier (Threat Classifier model with class balancing)
+    print("   Training RandomForestClassifier (Threat Classifier with 100 estimators & balanced weights)...", flush=True)
+    clf_model = RandomForestClassifier(n_estimators=100, max_depth=8, class_weight='balanced', random_state=42)
     clf_model.fit(X_train, y_class_train)
     print("   Threat Classifier training finished.", flush=True)
     
@@ -162,18 +164,24 @@ def main():
     y_reg_pred = reg_model.predict(X_test)
     y_reg_pred = np.maximum(y_reg_pred, 0) # Volumes cannot be negative
     
-    rmse = np.sqrt(np.mean((y_reg_test - y_reg_pred) ** 2))
-    mean_volume = np.mean(y_reg_test)
-    rmse_percentage = (rmse / mean_volume) * 100.0 if mean_volume > 0 else 0.0
-    mape = np.mean(np.abs(y_reg_test - y_reg_pred) / np.maximum(y_reg_test, 1.0)) * 100.0
+    rmse = float(np.sqrt(np.mean((y_reg_test - y_reg_pred) ** 2)))
+    mean_volume = float(np.mean(y_reg_test))
+    rmse_percentage = float((rmse / mean_volume) * 100.0) if mean_volume > 0 else 0.0
+
+    # Operational MAPE (calculated on active passenger periods >= 10 pax to prevent 0-division explosion)
+    mask_active = (y_reg_test >= 10.0)
+    if np.any(mask_active):
+        mape = float(np.mean(np.abs(y_reg_test[mask_active] - y_reg_pred[mask_active]) / y_reg_test[mask_active]) * 100.0)
+    else:
+        mape = float(np.sum(np.abs(y_reg_test - y_reg_pred)) / max(np.sum(y_reg_test), 1.0) * 100.0)
     
     # Discrete Threat Classification predictions
     y_class_pred = clf_model.predict(X_test)
-    accuracy = accuracy_score(y_class_test, y_class_pred) * 100.0
-    recall_w = recall_score(y_class_test, y_class_pred, average='weighted') * 100.0
-    f1_w = f1_score(y_class_test, y_class_pred, average='weighted')
+    accuracy = float(accuracy_score(y_class_test, y_class_pred) * 100.0)
+    recall_w = float(recall_score(y_class_test, y_class_pred, average='weighted', zero_division=0) * 100.0)
+    f1_w = float(f1_score(y_class_test, y_class_pred, average='weighted', zero_division=0))
     
-    print(f"   XGBoost Regressor:  RMSE = {rmse:.2f} ({rmse_percentage:.2f}% of mean volume), MAPE = {mape:.2f}%", flush=True)
+    print(f"   XGBoost Regressor:  RMSE = {rmse:.2f} ({rmse_percentage:.2f}% of mean volume), Operational MAPE = {mape:.2f}%", flush=True)
     print(f"   Random Forest:      Accuracy = {accuracy:.2f}%, Recall = {recall_w:.2f}%, Weighted F1 = {f1_w:.4f}", flush=True)
     
     # 8. Query Prescriptive Validation (Phase 2 Validation)
