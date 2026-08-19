@@ -18,7 +18,7 @@ To accurately isolate and evaluate system performance, the validation methodolog
 Live operational stress testing—which historically relied on Command Center staff logging physical reaction times during real-world anomalies—has been completely removed to eliminate human interference from the system's grading. Instead, User Acceptance Testing (UAT) is conducted via **Simulated Scenario Injection**. In a controlled sandbox environment, historical anomaly datasets (e.g., past severe weather alerts or sudden class suspensions) are fed into the pipeline. This safely and mathematically verifies both the predictive accuracy and the prescriptive logic.
 
 ## 1.4 Minimum Viable Performance Benchmarks
-To be deemed production-ready for the client, the AnalyzeMon system must achieve or exceed the following concrete Minimum Viable Performance (MVP) passing grades during the simulation phase:
+To be deemed production-ready for the client, the LRT-2 Decision Support System (LRT2 DSS) must achieve or exceed the following concrete Minimum Viable Performance (MVP) passing grades during the simulation phase:
 * **Volume Prediction (XGBoost):** RMSE < 5% variance.
 * **Risk Classification (Random Forest):** Weighted F1-Score $\ge$ 0.85.
 * **Heuristic Compliance (Decision Tree):** SCR = 100%.

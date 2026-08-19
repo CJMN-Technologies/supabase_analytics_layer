@@ -39,7 +39,7 @@ BEGIN
   LIMIT 1;
 
   RAISE NOTICE '============================================================';
-  RAISE NOTICE '   AnalyzeMon: Predictive Engine SQL Validation Pipeline    ';
+  RAISE NOTICE '   LRT-2 DSS: Predictive Engine SQL Validation Pipeline    ';
   RAISE NOTICE '============================================================';
   RAISE NOTICE '   Evaluation Run ID: %', v_run_id;
   RAISE NOTICE '   Total Turnstile Records: %', v_total_records;

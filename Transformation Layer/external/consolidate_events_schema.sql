@@ -196,13 +196,36 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 6: Class / Exam / Transaction / Work Suspensions & Holidays
-    IF v_combined ~* '((class(es)?|klase|work|trabaho|office|opisina|school|campus|transaction(s)?|operation(s)?)\s+.*(suspend|suspens|cancelled)|(suspend(ed|ing|sion)?|suspensyon|kanselado|cancel(led|lation)?)\s+.*(class|klase|work|office|school|campus|transaction|operation|onsite)|walang\s*pasok|no\s+class(es)?|in-person\s+class(es)?\s+suspension|cancel(lation|led)?\s+of\s+(medical\s+)?exam|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
-        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension / Advisory'); 
+    -- Filter 6a: Statutory, National, LGU, and University Holidays (Distinct from Suspensions)
+    IF v_combined ~* '(non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|\bholiday\b|holy\s+week|lenten\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation|chinese\s+new\s+year)' 
+       AND NOT v_combined ~* '(walang\s*pasok\s+dahil\s+sa\s+(baha|bagyo|ulan|heat)|class(es)?\s+are\s+suspended\s+due\s+to)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'National / Academic Holiday'); 
+        event_category := 'holiday'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Holiday'; 
+        affects_ridership := TRUE; 
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 6b: School / Term Breaks
+    IF v_combined ~* '(semestral\s+break|summer\s+break|midyear\s+break|christmas\s+break|term\s+break|academic\s+break)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'School Break'); 
+        event_category := 'school_break'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'School Break'; 
+        affects_ridership := TRUE; 
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 6c: Dynamic Class / Work Suspensions (Emergency, Weather, Heat Index)
+    IF v_combined ~* '((class(es)?|klase|work|trabaho|office|opisina|school|campus|transaction(s)?|operation(s)?)\s+.*(suspend|suspens|cancelled)|(suspend(ed|ing|sion)?|suspensyon|kanselado|cancel(led|lation)?)\s+.*(class|klase|work|office|school|campus|transaction|operation|onsite)|walang\s*pasok|no\s+class(es)?|in-person\s+class(es)?\s+suspension|cancel(lation|led)?\s+of\s+(medical\s+)?exam)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension'); 
         event_category := 'class_suspension'; 
         friction_domain := 'academic'; 
-        trigger_category := 'Class Suspension / Holiday'; 
-        affects_ridership := TRUE;
+        trigger_category := 'Class Suspension'; 
+        affects_ridership := TRUE; 
         RETURN NEXT; 
         RETURN;
     END IF;
@@ -260,6 +283,17 @@ BEGIN
         trigger_category := 'University Exam Week'; 
         affects_ridership := TRUE;
         RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 12: LGU Weather, Rainfall Warnings & Road Flooding Status (Non-suspension, non-disruptive rail monitoring)
+    IF p_category = 'lgu' OR v_combined ~* '(heavy\s+rainfall\s+warning|orange\s+warning|yellow\s+warning|red\s+warning|weather\s+advisory|status\s+of\s+roads|baha\s+sa|pagasa|habagat|southwest\s+monsoon)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Weather / Flooding Advisory');
+        event_category := 'lgu';
+        friction_domain := 'lgu';
+        trigger_category := 'LGU Weather Advisory';
+        affects_ridership := FALSE;
+        RETURN NEXT;
         RETURN;
     END IF;
 
@@ -502,6 +536,8 @@ BEGIN
 
     v_cat_code := CASE v_result.event_category
         WHEN 'class_suspension' THEN 'CS'
+        WHEN 'holiday' THEN 'HD'
+        WHEN 'school_break' THEN 'SB'
         WHEN 'transport_strike' THEN 'TS'
         WHEN 'major_event' THEN 'ME'
         WHEN 'exam_week' THEN 'EX'

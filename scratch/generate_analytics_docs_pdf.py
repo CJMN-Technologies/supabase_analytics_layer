@@ -587,7 +587,7 @@ def build_pdf(filename="Analytics Layer/Supabase_Transformation_and_Analytics.pd
     story.append(Spacer(1, 15))
     story.append(Paragraph(
         "<b>Conclusion:</b> Having successfully cleared all four Minimum Viable Performance (MVP) targets during the sandboxed "
-        "Simulated Scenario Injection phase, the AnalyzeMon system is mathematically certified as production-ready for integration "
+        "Simulated Scenario Injection phase, the LRT-2 Decision Support System (LRT2 DSS) is mathematically certified as production-ready for integration "
         "with the LRT-2 operations network.",
         body_style
     ))

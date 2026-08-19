@@ -15,7 +15,7 @@ def print_header(title):
     print("=" * 60, flush=True)
 
 def main():
-    print_header("AnalyzeMon: Predictive Engine Training & Validation Pipeline")
+    print_header("Predictive Engine Training & Validation Pipeline")
     
     # 1. Load Environment Variables & Connect
     load_dotenv()
@@ -288,7 +288,7 @@ def main():
     conn.close()
     
     # 10. Grade validation against MVP Targets
-    print_header("AnalyzeMon: Validation Certification Report")
+    print_header("Validation Certification Report")
     
     mvp_rmse_passed = rmse_percentage < 5.0
     mvp_f1_passed = f1_w >= 0.85

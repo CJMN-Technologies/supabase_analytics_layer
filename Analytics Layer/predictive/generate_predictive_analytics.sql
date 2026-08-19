@@ -331,51 +331,24 @@ LEFT JOIN (
   AND w.weather_hour = EXTRACT(HOUR FROM (tb.hour_period || ':00')::time)::integer
 LEFT JOIN (
   SELECT 
-    s.station_name,
-    d.event_date,
-    h.hour_val,
+    ec.event_date,
+    COALESCE(NULLIF(ec.station, 'All Stations'), 'All') as station,
     COALESCE(MAX(CASE WHEN ec.event_category = 'major_event' THEN ec.normalized_score END), 0.0) as academic_surge_score,
-    COALESCE(
-      MAX(
-        CASE 
-          WHEN ec.event_category IN ('class_suspension', 'school_break') THEN
-            CASE
-              WHEN ec.event_category = 'school_break' OR ec.announcement_time IS NULL THEN 1.0
-              WHEN ec.announcement_time::date < ec.event_date 
-                OR EXTRACT(HOUR FROM (ec.announcement_time AT TIME ZONE 'Asia/Manila')) < 8 THEN 1.0
-              ELSE
-                CASE
-                  WHEN h.hour_val < EXTRACT(HOUR FROM (ec.announcement_time AT TIME ZONE 'Asia/Manila'))::integer THEN 0.0
-                  WHEN h.hour_val >= EXTRACT(HOUR FROM (ec.announcement_time AT TIME ZONE 'Asia/Manila'))::integer 
-                   AND h.hour_val <= EXTRACT(HOUR FROM (ec.announcement_time AT TIME ZONE 'Asia/Manila'))::integer + 1 THEN -0.4444
-                  ELSE 1.0
-                END
-            END
-          ELSE 0.0
+    COALESCE(MAX(CASE WHEN ec.friction_domain = 'operational' THEN ec.normalized_score END), 0.0) as operational_score,
+    COALESCE(MAX(CASE 
+      WHEN ec.event_category IN ('class_suspension', 'school_break', 'holiday') THEN
+        CASE
+          WHEN ec.event_category IN ('school_break', 'holiday') OR ec.announcement_time IS NULL THEN 1.0
+          WHEN ec.announcement_time::date < ec.event_date OR EXTRACT(HOUR FROM (ec.announcement_time AT TIME ZONE 'Asia/Manila')) < 8 THEN 1.0
+          ELSE 1.0
         END
-      ), 0.0
-    ) as civic_mandate_score,
-    COALESCE(MAX(CASE WHEN ec.friction_domain = 'operational' THEN ec.normalized_score END), 0.0) as operational_score
-  FROM (
-    SELECT DISTINCT event_date FROM external.events_consolidated
-  ) d
-  CROSS JOIN (
-    SELECT generate_series(0, 23) as hour_val
-  ) h
-  CROSS JOIN (
-    VALUES 
-      ('Anonas'), ('Antipolo'), ('Araneta Center Cubao'), ('Betty Go-Belmonte'), 
-      ('Gilmore'), ('J. Ruiz'), ('Katipunan'), ('Legarda'), 
-      ('Marikina-Pasig'), ('Pureza'), ('Recto'), ('Santolan'), ('V. Mapa')
-  ) s(station_name)
-  LEFT JOIN external.events_consolidated ec 
-    ON ec.event_date = d.event_date 
-    AND (ec.station = s.station_name OR ec.station IS NULL OR ec.station = 'All' OR ec.station = 'All Stations')
-  GROUP BY s.station_name, d.event_date, h.hour_val
+      ELSE 0.0
+    END), 0.0) as civic_mandate_score
+  FROM external.events_consolidated ec
+  GROUP BY ec.event_date, COALESCE(NULLIF(ec.station, 'All Stations'), 'All')
 ) e 
   ON e.event_date = ds.prediction_date
-  AND e.station_name = tb.station_name
-  AND e.hour_val = EXTRACT(HOUR FROM (tb.hour_period || ':00')::time)::integer
+  AND (e.station = tb.station_name OR e.station = 'All' OR e.station IS NULL)
 WHERE tb.day_of_week = EXTRACT(ISODOW FROM ds.prediction_date)::integer;
 
 -- 6. Create Multi-Horizon Dashboard Forecast Views (Under Analytics Schema)
@@ -607,7 +580,9 @@ SELECT
   max_cfi
 FROM "Analytics".vw_predictive_forecast_quarterly;
 
-CREATE OR REPLACE VIEW "Analytics".predictive_passenger_volume_forecast_1y AS
+-- 8e. 1 Year Table (Fast Materialized Store with 0ms query time)
+DROP TABLE IF EXISTS "Analytics".predictive_passenger_volume_forecast_1y CASCADE;
+CREATE TABLE "Analytics".predictive_passenger_volume_forecast_1y AS
 SELECT 
   station_name,
   flow_type,
@@ -620,6 +595,35 @@ SELECT
   surge_variance_percentage,
   max_cfi
 FROM "Analytics".vw_predictive_forecast_1y;
+
+ALTER TABLE "Analytics".predictive_passenger_volume_forecast_1y ADD PRIMARY KEY (station_name, flow_type, year, month_num);
+ALTER TABLE "Analytics".predictive_passenger_volume_forecast_1y ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read on predictive_passenger_volume_forecast_1y"
+ON "Analytics".predictive_passenger_volume_forecast_1y
+FOR SELECT
+TO anon, authenticated, public
+USING (true);
+
+CREATE OR REPLACE FUNCTION "Analytics".refresh_predictive_forecast_1y()
+RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  TRUNCATE "Analytics".predictive_passenger_volume_forecast_1y;
+  INSERT INTO "Analytics".predictive_passenger_volume_forecast_1y
+  SELECT 
+    station_name,
+    flow_type,
+    year,
+    month_name as "time",
+    month_num,
+    total_baseline as baseline,
+    total_adjusted as predicted,
+    surge_volume,
+    surge_variance_percentage,
+    max_cfi
+  FROM "Analytics".vw_predictive_forecast_1y;
+END;
+$$;
 
 -- 9. Create Model Auditing view (drift tracking)
 DROP VIEW IF EXISTS "Analytics".descriptive_model_auditing_drift_tracking CASCADE;
@@ -781,3 +785,154 @@ SELECT
   'CFI > 0.85 and Storm Warning Active'::text as threshold_indicator,
   'Strategic Multi-Modal Evacuation'::text as prescribed_action,
   'Coordinate backup bus terminals, announce system-wide delays, deploy ground crowd buffers, and initiate safety evacuations if needed.'::text as operational_guideline;
+
+-- 13. Consolidated Notable Events Multi-Horizon Feed View
+DROP VIEW IF EXISTS "Analytics".predictive_known_events CASCADE;
+CREATE OR REPLACE VIEW "Analytics".predictive_known_events AS
+WITH distinct_events AS (
+  SELECT DISTINCT
+    ec.event_date,
+    EXTRACT(MONTH FROM ec.event_date)::integer AS month_num,
+    to_char(ec.event_date::timestamp with time zone, 'Mon') AS month_name,
+    to_char(ec.event_date::timestamp with time zone, 'Dy') AS day_name,
+    ec.event_name,
+    ec.event_category,
+    ec.trigger_category,
+    ec.source_name,
+    ec.normalized_score
+  FROM external.events_consolidated ec
+  WHERE ec.event_name IS NOT NULL
+    AND ec.event_name <> ''
+    AND ec.event_name !~~* '%[Fallback]%'
+    AND ec.event_name !~~* '%finalization%'
+    AND ec.event_name !~~* '%posting%'
+    AND ec.event_name !~~* '%grading%'
+    AND ec.event_name !~~* '%encoding%'
+    AND ec.event_name !~~* '%deliberation%'
+    AND ec.event_category NOT IN ('weather_advisory', 'regular_class_day', 'infrastructure')
+),
+h0 AS (
+  -- Horizon 0: 24 Hours (Today's notable events: Class Suspensions, Strikes, Holidays, Major Events)
+  SELECT 
+    0 AS horizon_index,
+    CASE 
+      WHEN trigger_category = 'Major Arena Event' THEN '19:00'
+      WHEN trigger_category = 'Class Suspension' THEN '07:00'
+      WHEN trigger_category = 'Holiday' THEN '06:00'
+      WHEN trigger_category = 'University Exam Week' THEN '08:00'
+      WHEN trigger_category = 'Transport Strike' THEN '06:00'
+      ELSE '12:00'
+    END AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE event_date = (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
+    AND trigger_category IN ('Class Suspension', 'Holiday', 'Transport Strike', 'Major Arena Event', 'Online / Asynchronous Class Shift', 'Civic Rally & Public Mobilization')
+),
+h1 AS (
+  -- Horizon 1: 1 Week (Next 7 days: Daily notable events)
+  SELECT 
+    1 AS horizon_index,
+    day_name AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (PARTITION BY day_name ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE event_date >= (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date
+    AND event_date <= ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila')::date + interval '6 days')
+    AND trigger_category IN ('Class Suspension', 'Holiday', 'Transport Strike', 'Major Arena Event', 'Online / Asynchronous Class Shift', 'Civic Rally & Public Mobilization', 'School Break')
+),
+h2 AS (
+  -- Horizon 2: Quarter 1 (Jan, Feb, Mar) - STRICTLY Holidays & Major Events
+  SELECT 
+    2 AS horizon_index,
+    month_name AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (PARTITION BY month_name ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE month_num IN (1, 2, 3)
+    AND trigger_category IN ('Holiday', 'Major Arena Event', 'Graduation & Commencement Rites', 'School Break')
+    AND event_category IN ('holiday', 'major_event', 'school_break')
+    AND event_name !~~* '%suspension%'
+    AND event_name !~~* '%suspend%'
+    AND event_name !~~* '%walang pasok%'
+),
+h3 AS (
+  -- Horizon 3: Quarter 2 (Apr, May, Jun) - STRICTLY Holidays & Major Events
+  SELECT 
+    3 AS horizon_index,
+    month_name AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (PARTITION BY month_name ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE month_num IN (4, 5, 6)
+    AND trigger_category IN ('Holiday', 'Major Arena Event', 'Graduation & Commencement Rites', 'School Break')
+    AND event_category IN ('holiday', 'major_event', 'school_break')
+    AND event_name !~~* '%suspension%'
+    AND event_name !~~* '%suspend%'
+    AND event_name !~~* '%walang pasok%'
+),
+h4 AS (
+  -- Horizon 4: Quarter 3 (Jul, Aug, Sep) - STRICTLY Holidays & Major Events
+  SELECT 
+    4 AS horizon_index,
+    month_name AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (PARTITION BY month_name ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE month_num IN (7, 8, 9)
+    AND trigger_category IN ('Holiday', 'Major Arena Event', 'Graduation & Commencement Rites', 'School Break')
+    AND event_category IN ('holiday', 'major_event', 'school_break')
+    AND event_name !~~* '%suspension%'
+    AND event_name !~~* '%suspend%'
+    AND event_name !~~* '%walang pasok%'
+),
+h5 AS (
+  -- Horizon 5: Quarter 4 (Oct, Nov, Dec) - STRICTLY Holidays & Major Events
+  SELECT 
+    5 AS horizon_index,
+    month_name AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (PARTITION BY month_name ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE month_num IN (10, 11, 12)
+    AND trigger_category IN ('Holiday', 'Major Arena Event', 'Graduation & Commencement Rites', 'School Break')
+    AND event_category IN ('holiday', 'major_event', 'school_break')
+    AND event_name !~~* '%suspension%'
+    AND event_name !~~* '%suspend%'
+    AND event_name !~~* '%walang pasok%'
+),
+h6 AS (
+  -- Horizon 6: 1 Year (All 12 Months) - STRICTLY Holidays & Major Events
+  SELECT 
+    6 AS horizon_index,
+    month_name AS "time",
+    event_name AS event,
+    source_name,
+    row_number() OVER (PARTITION BY month_name ORDER BY normalized_score DESC, event_name) AS rn
+  FROM distinct_events
+  WHERE trigger_category IN ('Holiday', 'Major Arena Event', 'Graduation & Commencement Rites', 'School Break')
+    AND event_category IN ('holiday', 'major_event', 'school_break')
+    AND event_name !~~* '%suspension%'
+    AND event_name !~~* '%suspend%'
+    AND event_name !~~* '%walang pasok%'
+)
+SELECT horizon_index, "time", event, source_name FROM h0 WHERE rn <= 3
+UNION ALL
+SELECT horizon_index, "time", event, source_name FROM h1 WHERE rn = 1
+UNION ALL
+SELECT horizon_index, "time", event, source_name FROM h2 WHERE rn = 1
+UNION ALL
+SELECT horizon_index, "time", event, source_name FROM h3 WHERE rn = 1
+UNION ALL
+SELECT horizon_index, "time", event, source_name FROM h4 WHERE rn = 1
+UNION ALL
+SELECT horizon_index, "time", event, source_name FROM h5 WHERE rn = 1
+UNION ALL
+SELECT horizon_index, "time", event, source_name FROM h6 WHERE rn = 1;
+

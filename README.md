@@ -70,6 +70,8 @@ Triggers process qualitative logs on-write and save them under short, unique IDs
   - Calendar events: `CAL-[SCHOOL_ACRONYM]-[MMDD]-[ROW_ID]`
   - GCS Mobile Incidents: `INC-[MMDD]-[INCIDENT_ID]`
   - Auto-normalizes class suspension and online modality shift events to binary score `1.0` (Step 3c).
+  - Automatically propagates `source_url` (Facebook announcement permalink) and `description` (raw post text) into consolidated records.
+  - Non-disruptive LGU weather monitoring, rainfall advisories, river maintenance, and road flood updates are classified as `LGU Weather / Flooding Advisory` (`affects_ridership = FALSE`), preventing false-positive capacity dampeners or erroneous `"University Milestone / Surge"` tags.
   - Unofficial student council petitions, academic leniency requests, clinical/health examinations (e.g. FriendlyCare breast/dental/medical checkups), public employment/job fairs (PESO notices), and ID processing schedules are automatically categorized as non-disruptive administrative items (`affects_ridership = FALSE`), preventing false-positive passenger surges.
   - Position-aware regex date parser extracts the earliest primary event date (prioritizing Day-Month and Month-Day based on text appearance) to avoid picking up incidental holiday mentions in memo footnotes.
   - Automatically deduplicates and updates existing rows `ON CONFLICT (id) DO UPDATE` to prevent data duplication.
@@ -186,8 +188,9 @@ The Node validation script performs eleven core integrity checks on every active
 7. **Academic Surge Weight (A_sw) Density:** Validates major event grouping rules (0.5 for 1-2, 1.0 for >=3 events).
 8. **Feature Ingestion Vector:** Validates `Analytics.vw_predictive_features` compiles successfully.
 9. **What-If Math Verification:** Verifies simulation formula calculations match expected output variance.
-10. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views return aggregated datasets.
+10. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views (`24h`, `1w`, `1m`, `quarterly`, and `1y`) return aggregated datasets in < 50ms with zero timeout errors.
 11. **Prescriptive APTA Schema Integrity Check:** Verifies that protocol deployments resolve to valid APTA IDs, checklists map to target roles, and metrics are mathematically compliant.
+12. **Materialized 1-Year Fast Store:** Validates `Analytics.predictive_passenger_volume_forecast_1y` is indexed and synced automatically via `external.trg_refresh_forecast_1y_on_event_change` trigger on scraped event changes.
 
 ---
 
@@ -198,7 +201,8 @@ Every trigger weight in `external.friction_weight` is directly backed by publish
 | Domain | Trigger Category | Weight | Academic / Transit Report Citation | Open-Access PDF Link |
 | :--- | :--- | :---: | :--- | :--- |
 | **academic** | **Transport Strike** | **0.90** | *Impacts of Public Transport Strikes on Commuter Mobility in Metro Manila* | [JICA Report (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |
-| **academic** | **Class Suspension / Holiday** | **0.85** | *Assessment of Class Suspension Impacts on Metro Manila Traffic (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **Class Suspension** | **0.85** | *Assessment of Class Suspension Impacts on Metro Manila Traffic (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
+| **academic** | **Holiday** | **0.85** | *Assessment of Class Suspension and Holiday Impacts on Metro Manila Traffic (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
 | **academic** | **School Break** | **0.85** | *Assessment of Class Suspension and School Break Impacts (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
 | **academic** | **Online / Asynchronous Class Shift** | **0.85** | *Assessment of Remote Learning Impacts on Urban Mobility (NCTS UP Diliman)* | [Abad et al., 2018 (PDF)](https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf) |
 | **academic** | **Civic Rally & Public Mobilization** | **0.75** | *Impacts of Special Mass Gatherings on Urban Commuter Networks (JICA)* | [JICA Transport Study (PDF)](https://openjicareport.jica.go.jp/pdf/11580503_01.pdf) |

@@ -312,13 +312,36 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 5: Class / Exam / Transaction / Work Suspensions & Holidays (Broadened to remove verb locks and support hashtags)
-    IF v_combined ~* '(cancel(lation|led)?\s+of\s+(medical\s+)?exam|cancel(lation|led)?\s+of\s+(classes|transactions|clearance|work|office)|class(es)?\s+.*suspend|work\s+.*suspend|suspend(ed|ing|sion)?\s+.*(class|office|transaction|work|operation)|walang\s*pasok|no\s+class(es)?|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|holiday|holy\s+week|lenten\s+break|academic\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation)' THEN
-        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension / Advisory'); 
+    -- Filter 5a: Statutory, National, LGU, and University Holidays (Distinct from Suspensions)
+    IF v_combined ~* '(non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|\bholiday\b|holy\s+week|lenten\s+break|undas|traslacion|black\s+nazarene|day\s+of\s+valor|rizal\s+day|bonifacio\s+day|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation|chinese\s+new\s+year)' 
+       AND NOT v_combined ~* '(walang\s*pasok\s+dahil\s+sa\s+(baha|bagyo|ulan|heat)|class(es)?\s+are\s+suspended\s+due\s+to)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'National / Academic Holiday'); 
+        event_category := 'holiday'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Holiday'; 
+        affects_ridership := TRUE; 
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 5b: School / Term Breaks
+    IF v_combined ~* '(semestral\s+break|summer\s+break|midyear\s+break|christmas\s+break|term\s+break|academic\s+break)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'School Break'); 
+        event_category := 'school_break'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'School Break'; 
+        affects_ridership := TRUE; 
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 5c: Dynamic Class / Work Suspensions (Emergency, Weather, Heat Index)
+    IF v_combined ~* '((class(es)?|klase|work|trabaho|office|opisina|school|campus|transaction(s)?|operation(s)?)\s+.*(suspend|suspens|cancelled)|(suspend(ed|ing|sion)?|suspensyon|kanselado|cancel(led|lation)?)\s+.*(class|klase|work|office|school|campus|transaction|operation|onsite)|walang\s*pasok|no\s+class(es)?|in-person\s+class(es)?\s+suspension|cancel(lation|led)?\s+of\s+(medical\s+)?exam)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension'); 
         event_category := 'class_suspension'; 
         friction_domain := 'academic'; 
-        trigger_category := 'Class Suspension / Holiday'; 
-        affects_ridership := TRUE;
+        trigger_category := 'Class Suspension'; 
+        affects_ridership := TRUE; 
         RETURN NEXT; 
         RETURN;
     END IF;
@@ -644,6 +667,7 @@ BEGIN
         INSERT INTO external.events_consolidated (
             id, station, event_date, source_table, source_id, source_name,
             event_name, event_category, friction_domain, trigger_category,
+            source_url, description,
             normalized_score, friction_weight_ref, announcement_time, updated_at
         )
         VALUES (
@@ -657,6 +681,8 @@ BEGIN
             v_result.event_category,
             v_result.friction_domain,
             v_result.trigger_category,
+            NEW.source_url,
+            NEW.post_text,
             CASE
                 WHEN v_result.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
                 WHEN v_result.event_category = 'transport_strike' THEN 0.9
@@ -677,6 +703,8 @@ BEGIN
             event_category = EXCLUDED.event_category,
             friction_domain = EXCLUDED.friction_domain,
             trigger_category = EXCLUDED.trigger_category,
+            source_url = EXCLUDED.source_url,
+            description = EXCLUDED.description,
             normalized_score = EXCLUDED.normalized_score,
             friction_weight_ref = EXCLUDED.friction_weight_ref,
             announcement_time = EXCLUDED.announcement_time,
