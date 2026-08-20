@@ -263,8 +263,9 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 10: Civic Rallies & Public Mobilizations
-    IF v_combined ~* '(sona\s+rally|protest|mobilization|mass\s+gathering|labor\s+rally|peace\s+rally|march\s+for|piket|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin)' THEN
+    -- Filter 10: Civic Rallies & Public Mobilizations (Strict word boundary & exclude demobilization)
+    IF (v_combined ~* '(sona\s+rally|protest|labor\s+rally|peace\s+rally|march\s+for|piket|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin|\b(public|mass|student|youth)\s+mobilization\b)'
+        OR (v_combined ~* '\bmobilization\b' AND NOT v_combined ~* '(demobiliz|incident\s+management)')) THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Civic Rally & Public Mobilization'); 
         event_category := 'major_event'; 
         friction_domain := 'academic'; 

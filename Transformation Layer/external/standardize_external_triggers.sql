@@ -346,8 +346,20 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 6: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
-    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer|relief\s+goods)' THEN
+    -- Filter 6: LGU Weather / Flood / Incident Management Monitoring (Non-disruptive unless suspension declared)
+    IF (v_combined ~* '(weather\s+update|heavy\s+rainfall|rainfall\s+warning|habagat|southwest\s+monsoon|monsoon|water\s+level|river\s+level|alert\s+level|incident\s+management\s+team|demobiliz|wild\s+diseases)'
+        AND NOT v_combined ~* '(suspend|walang\s*pasok|no\s+class|shift\s+to\s+online|strike|tigil\s+pasada)')) THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Weather Advisory'); 
+        event_category := 'weather_advisory'; 
+        friction_domain := 'lgu'; 
+        trigger_category := 'LGU Weather & Flooding Monitoring'; 
+        affects_ridership := FALSE;
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 7: LGU Maintenance / Tree Trimming / Clearing / Drainage Declogging Activities (Does NOT affect rail ridership)
+    IF v_combined ~* '(tree\s+trimming|road\s+clearance|clearing\s+operation|pruning|tree\s+pruning|declogging|drainage|flushing|sewer|relief\s+goods|street\s+repair|road\s+maintenance)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Clearing & Maintenance Activity'); 
         event_category := 'infrastructure'; 
         friction_domain := 'lgu'; 
@@ -357,8 +369,8 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 7: Major Arena Events
-    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|rally|pep\s+rally|game\s+day|paskuhan|lantern\s+parade)' THEN
+    -- Filter 8: Major Arena Events
+    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|pep\s+rally|game\s+day|paskuhan|lantern\s+parade)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Major Arena / Sports Event'); 
         event_category := 'major_event'; 
         friction_domain := 'academic'; 
@@ -368,7 +380,7 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 8: Graduation & Commencement Rites
+    -- Filter 9: Graduation & Commencement Rites
     IF v_combined ~* '(commencement|graduation|baccalaureate|solemn\s+investiture|hooding|closing\s+exercises)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Graduation & Commencement Rites'); 
         event_category := 'major_event'; 
@@ -379,18 +391,19 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 9: Civic Rallies & Public Mobilizations
-    IF v_combined ~* '(sona\s+rally|protest|mobilization|mass\s+gathering|labor\s+rally|peace\s+rally|march\s+for|piket|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin)' THEN
+    -- Filter 10: Civic Rallies & Public Mobilizations (Strict word boundary & exclude demobilization)
+    IF (v_combined ~* '(sona\s+rally|protest|labor\s+rally|peace\s+rally|march\s+for|piket|first\s+week\s+rage|marcos\s*singilin|duterte\s*panagutin|\b(public|mass|student|youth)\s+mobilization\b)'
+        OR (v_combined ~* '\bmobilization\b' AND NOT v_combined ~* '(demobiliz|incident\s+management)')) THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Civic Rally & Public Mobilization'); 
         event_category := 'major_event'; 
         friction_domain := 'academic'; 
         trigger_category := 'Civic Rally & Public Mobilization'; 
-        affects_ridership := TRUE;
+        affects_ridership := TRUE; 
         RETURN NEXT; 
         RETURN;
     END IF;
 
-    -- Filter 10: Examination Period (ONLY if NOT cancelled/suspended)
+    -- Filter 11: Examination Period (ONLY if NOT cancelled/suspended)
     IF v_combined ~* '(exam(ination)?s?|midterm|finals?\s+(exam|week)|prelim(inary)?\s+exam|long\s+exam|qualifying\s+exam)' 
        AND NOT v_combined ~* '(cancel|suspend|walang\s*pasok|no\s+class)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Examination Period'); 
