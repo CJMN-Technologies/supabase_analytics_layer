@@ -190,7 +190,7 @@ The Node validation script performs eleven core integrity checks on every active
 9. **What-If Math Verification:** Verifies simulation formula calculations match expected output variance.
 10. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views (`24h`, `1w`, `1m`, `quarterly`, and `1y`) return aggregated datasets in < 50ms with zero timeout errors.
 11. **Prescriptive APTA Schema Integrity Check:** Verifies that protocol deployments resolve to valid APTA IDs, checklists map to target roles, and metrics are mathematically compliant.
-12. **Materialized 1-Year Fast Store:** Validates `Analytics.predictive_passenger_volume_forecast_1y` is indexed and synced automatically via `external.trg_refresh_forecast_1y_on_event_change` trigger on scraped event changes.
+12. **Materialized 1-Year Fast Store:** Validates `Analytics.predictive_passenger_volume_forecast_1y` is indexed and populated for 0ms dashboard queries; decoupled from synchronous row-level triggers to guarantee sub-150ms real-time incident logging across Ground Control mobile clients.
 
 ---
 
