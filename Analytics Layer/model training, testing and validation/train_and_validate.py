@@ -42,9 +42,10 @@ def main():
         print(f"[ERROR] Connection failed: {e}", flush=True)
         sys.exit(1)
     
-    # 2. Ingest Features & Baseline Thresholds
     print("\n[INGEST] Step 1: Ingesting post-lockdown predictive features & station baselines (2023–2025)...", flush=True)
-    query = """
+    train_start = os.getenv("TRAIN_START_DATE", "2023-01-01")
+    train_end = os.getenv("TRAIN_END_DATE", "2025-12-31")
+    query = f"""
         SELECT 
           f.date,
           f.hour_period,
@@ -65,7 +66,7 @@ def main():
           AND tb.flow_type = f.flow_type
           AND tb.day_of_week = f.day_of_week
           AND tb.hour_period = f.hour_period
-        WHERE f.date >= '2023-01-01'
+        WHERE f.date BETWEEN '{train_start}' AND '{train_end}'
         ORDER BY f.date, f.hour_period;
     """
     

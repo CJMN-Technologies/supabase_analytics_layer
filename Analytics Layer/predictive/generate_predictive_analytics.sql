@@ -39,50 +39,95 @@ ON CONFLICT (model_name) DO UPDATE SET
 
 
 -- 4. Create Feature Engineering View for ML Training/Inference Input
-CREATE OR REPLACE VIEW "Analytics".vw_predictive_features AS
-WITH combined_hourly AS (
-  SELECT date, time_period, station_name, flow_type, volume FROM (
-    SELECT date, time_period, anonas_entry, anonas_exit, antipolo_entry, antipolo_exit, araneta_center_cubao_entry, araneta_center_cubao_exit, betty_go_belmonte_entry, betty_go_belmonte_exit, gilmore_entry, gilmore_exit, j_ruiz_entry, j_ruiz_exit, katipunan_entry, katipunan_exit, legarda_entry, legarda_exit, marikina_pasig_entry, marikina_pasig_exit, pureza_entry, pureza_exit, recto_entry, recto_exit, santolan_entry, santolan_exit, v_mapa_entry, v_mapa_exit FROM "AFCS".ridership_2021 WHERE time_period NOT IN ('DAILY_TOTAL', 'MONTHLY_TOTAL', 'PEAK_TOTAL')
-    UNION ALL
-    SELECT date, time_period, anonas_entry, anonas_exit, antipolo_entry, antipolo_exit, araneta_center_cubao_entry, araneta_center_cubao_exit, betty_go_belmonte_entry, betty_go_belmonte_exit, gilmore_entry, gilmore_exit, j_ruiz_entry, j_ruiz_exit, katipunan_entry, katipunan_exit, legarda_entry, legarda_exit, marikina_pasig_entry, marikina_pasig_exit, pureza_entry, pureza_exit, recto_entry, recto_exit, santolan_entry, santolan_exit, v_mapa_entry, v_mapa_exit FROM "AFCS".ridership_2022 WHERE time_period NOT IN ('DAILY_TOTAL', 'MONTHLY_TOTAL', 'PEAK_TOTAL')
-    UNION ALL
-    SELECT date, time_period, anonas_entry, anonas_exit, antipolo_entry, antipolo_exit, araneta_center_cubao_entry, araneta_center_cubao_exit, betty_go_belmonte_entry, betty_go_belmonte_exit, gilmore_entry, gilmore_exit, j_ruiz_entry, j_ruiz_exit, katipunan_entry, katipunan_exit, legarda_entry, legarda_exit, marikina_pasig_entry, marikina_pasig_exit, pureza_entry, pureza_exit, recto_entry, recto_exit, santolan_entry, santolan_exit, v_mapa_entry, v_mapa_exit FROM "AFCS".ridership_2023 WHERE time_period NOT IN ('DAILY_TOTAL', 'MONTHLY_TOTAL', 'PEAK_TOTAL')
-    UNION ALL
-    SELECT date, time_period, anonas_entry, anonas_exit, antipolo_entry, antipolo_exit, araneta_center_cubao_entry, araneta_center_cubao_exit, betty_go_belmonte_entry, betty_go_belmonte_exit, gilmore_entry, gilmore_exit, j_ruiz_entry, j_ruiz_exit, katipunan_entry, katipunan_exit, legarda_entry, legarda_exit, marikina_pasig_entry, marikina_pasig_exit, pureza_entry, pureza_exit, recto_entry, recto_exit, santolan_entry, santolan_exit, v_mapa_entry, v_mapa_exit FROM "AFCS".ridership_2024 WHERE time_period NOT IN ('DAILY_TOTAL', 'MONTHLY_TOTAL', 'PEAK_TOTAL')
-    UNION ALL
-    SELECT date, time_period, anonas_entry, anonas_exit, antipolo_entry, antipolo_exit, araneta_center_cubao_entry, araneta_center_cubao_exit, betty_go_belmonte_entry, betty_go_belmonte_exit, gilmore_entry, gilmore_exit, j_ruiz_entry, j_ruiz_exit, katipunan_entry, katipunan_exit, legarda_entry, legarda_exit, marikina_pasig_entry, marikina_pasig_exit, pureza_entry, pureza_exit, recto_entry, recto_exit, santolan_entry, santolan_exit, v_mapa_entry, v_mapa_exit FROM "AFCS".ridership_2025 WHERE time_period NOT IN ('DAILY_TOTAL', 'MONTHLY_TOTAL', 'PEAK_TOTAL')
-  ) raw_union
-  CROSS JOIN LATERAL (
-    VALUES
-      ('Anonas', 'entry', anonas_entry),
-      ('Anonas', 'exit', anonas_exit),
-      ('Antipolo', 'entry', antipolo_entry),
-      ('Antipolo', 'exit', antipolo_exit),
-      ('Araneta Center Cubao', 'entry', araneta_center_cubao_entry),
-      ('Araneta Center Cubao', 'exit', araneta_center_cubao_exit),
-      ('Betty Go-Belmonte', 'entry', betty_go_belmonte_entry),
-      ('Betty Go-Belmonte', 'exit', betty_go_belmonte_exit),
-      ('Gilmore', 'entry', gilmore_entry),
-      ('Gilmore', 'exit', gilmore_exit),
-      ('J. Ruiz', 'entry', j_ruiz_entry),
-      ('J. Ruiz', 'exit', j_ruiz_exit),
-      ('Katipunan', 'entry', katipunan_entry),
-      ('Katipunan', 'exit', katipunan_exit),
-      ('Legarda', 'entry', legarda_entry),
-      ('Legarda', 'exit', legarda_exit),
-      ('Marikina-Pasig', 'entry', marikina_pasig_entry),
-      ('Marikina-Pasig', 'exit', marikina_pasig_exit),
-      ('Pureza', 'entry', pureza_entry),
-      ('Pureza', 'exit', pureza_exit),
-      ('Recto', 'entry', recto_entry),
-      ('Recto', 'exit', recto_exit),
-      ('Santolan', 'entry', santolan_entry),
-      ('Santolan', 'exit', santolan_exit),
-      ('V. Mapa', 'entry', v_mapa_entry),
-      ('V. Mapa', 'exit', v_mapa_exit)
-  ) AS unpivoted(station_name, flow_type, volume)
-),
-hourly_weather AS (
+-- ============================================================================
+-- This view exposes ALL ingested years for completeness.
+-- Training scripts (train_and_validate.py) apply their own date filter:
+--   WHERE date BETWEEN '2023-01-01' AND '2025-12-31'
+-- to restrict to the stable post-pandemic baseline window.
+-- A new year is automatically included here once rebuild_vw_hourly_actuals()
+-- is called after ingestion — no changes to this script are needed.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION "Analytics".rebuild_vw_predictive_features()
+RETURNS void LANGUAGE plpgsql AS $$
+DECLARE
+  v_tbl        record;
+  v_year_sql   text[] := ARRAY[]::text[];
+  v_union_all  text;
+  v_col_list   text := 'date, time_period, '
+    'anonas_entry, anonas_exit, '
+    'antipolo_entry, antipolo_exit, '
+    'araneta_center_cubao_entry, araneta_center_cubao_exit, '
+    'betty_go_belmonte_entry, betty_go_belmonte_exit, '
+    'gilmore_entry, gilmore_exit, '
+    'j_ruiz_entry, j_ruiz_exit, '
+    'katipunan_entry, katipunan_exit, '
+    'legarda_entry, legarda_exit, '
+    'marikina_pasig_entry, marikina_pasig_exit, '
+    'pureza_entry, pureza_exit, '
+    'recto_entry, recto_exit, '
+    'santolan_entry, santolan_exit, '
+    'v_mapa_entry, v_mapa_exit';
+BEGIN
+  FOR v_tbl IN
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = 'AFCS'
+      AND table_name ~ '^ridership_[0-9]{4}$'
+    ORDER BY table_name
+  LOOP
+    v_year_sql := array_append(
+      v_year_sql,
+      format(
+        'SELECT %s FROM "AFCS".%I WHERE time_period NOT IN (''DAILY_TOTAL'', ''MONTHLY_TOTAL'', ''PEAK_TOTAL'')',
+        v_col_list, v_tbl.table_name
+      )
+    );
+  END LOOP;
+
+  IF array_length(v_year_sql, 1) IS NULL THEN
+    RAISE EXCEPTION 'No AFCS ridership tables found.';
+  END IF;
+
+  v_union_all := array_to_string(v_year_sql, E'\n    UNION ALL\n    ');
+
+  EXECUTE format($view$
+    CREATE OR REPLACE VIEW "Analytics".vw_predictive_features AS
+    WITH combined_hourly AS (
+      SELECT date, time_period, station_name, flow_type, volume
+      FROM (
+        %s
+      ) raw_union
+      CROSS JOIN LATERAL (
+        VALUES
+          (''Anonas'',                 ''entry'', anonas_entry),
+          (''Anonas'',                 ''exit'',  anonas_exit),
+          (''Antipolo'',               ''entry'', antipolo_entry),
+          (''Antipolo'',               ''exit'',  antipolo_exit),
+          (''Araneta Center Cubao'',   ''entry'', araneta_center_cubao_entry),
+          (''Araneta Center Cubao'',   ''exit'',  araneta_center_cubao_exit),
+          (''Betty Go-Belmonte'',      ''entry'', betty_go_belmonte_entry),
+          (''Betty Go-Belmonte'',      ''exit'',  betty_go_belmonte_exit),
+          (''Gilmore'',                ''entry'', gilmore_entry),
+          (''Gilmore'',                ''exit'',  gilmore_exit),
+          (''J. Ruiz'',                ''entry'', j_ruiz_entry),
+          (''J. Ruiz'',                ''exit'',  j_ruiz_exit),
+          (''Katipunan'',              ''entry'', katipunan_entry),
+          (''Katipunan'',              ''exit'',  katipunan_exit),
+          (''Legarda'',                ''entry'', legarda_entry),
+          (''Legarda'',                ''exit'',  legarda_exit),
+          (''Marikina-Pasig'',         ''entry'', marikina_pasig_entry),
+          (''Marikina-Pasig'',         ''exit'',  marikina_pasig_exit),
+          (''Pureza'',                 ''entry'', pureza_entry),
+          (''Pureza'',                 ''exit'',  pureza_exit),
+          (''Recto'',                  ''entry'', recto_entry),
+          (''Recto'',                  ''exit'',  recto_exit),
+          (''Santolan'',               ''entry'', santolan_entry),
+          (''Santolan'',               ''exit'',  santolan_exit),
+          (''V. Mapa'',                ''entry'', v_mapa_entry),
+          (''V. Mapa'',                ''exit'',  v_mapa_exit)
+      ) AS unpivoted(station_name, flow_type, volume)
+    ),
+    hourly_weather AS (
   SELECT 
     weather_date,
     EXTRACT(HOUR FROM (observed_or_forecasted_at AT TIME ZONE 'Asia/Manila'))::integer as weather_hour,
@@ -160,6 +205,14 @@ LEFT JOIN hourly_events e
   ON e.event_date = ch.date 
   AND e.station_name = ch.station_name
   AND e.hour_val = EXTRACT(HOUR FROM (ch.time_period || ':00')::time)::integer;
+  $view$, v_union_all);
+
+  RAISE NOTICE 'vw_predictive_features rebuilt covering % year table(s).', array_length(v_year_sql, 1);
+END;
+$$;
+
+-- Build the view immediately using all currently ingested years
+SELECT "Analytics".rebuild_vw_predictive_features();
 
 -- 5. Create Core Calculations View with Dynamic Post-Processing and Threshold Classification
 CREATE OR REPLACE VIEW "Analytics".vw_predictive_metrics AS

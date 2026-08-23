@@ -20,7 +20,12 @@ jobs:
           cache: 'pip' # Speeds up execution by caching python packages
 
       - name: Install Python Dependencies
-        run: pip install -r requirements.txt
+        run: |
+          if [ -f "Analytics/requirements.txt" ]; then
+            pip install -r Analytics/requirements.txt
+          elif [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+          fi
 
       # Run model training & baseline forecast calculation
       - name: Run ML Training & Forecast
@@ -30,4 +35,10 @@ jobs:
           DB_NAME: "postgres"
           DB_USER: "postgres.kthioobzfyepokrrykem"
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        run: python "Analytics Layer/model training, testing and validation/train_and_validate.py"
+        run: |
+          if [ -d "Analytics/Analytics Layer" ]; then
+            cd Analytics
+            python "Analytics Layer/model training, testing and validation/train_and_validate.py"
+          else
+            python "Analytics Layer/model training, testing and validation/train_and_validate.py"
+          fi

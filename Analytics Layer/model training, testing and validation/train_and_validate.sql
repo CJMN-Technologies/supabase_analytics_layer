@@ -26,12 +26,17 @@ DECLARE
   v_mvp_scr_passed boolean;
   v_mvp_latency_passed boolean;
 BEGIN
-  -- 1. Ingest & Count records
-  SELECT COUNT(*) INTO v_total_records FROM "Analytics".vw_predictive_features;
+  -- 1. Ingest & Count records from post-lockdown baseline (2023-2025)
+  SELECT COUNT(*) INTO v_total_records 
+  FROM "Analytics".vw_predictive_features 
+  WHERE date BETWEEN '2023-01-01' AND '2025-12-31';
   
   -- Find 80% split date
   WITH ordered_dates AS (
-    SELECT DISTINCT date FROM "Analytics".vw_predictive_features ORDER BY date
+    SELECT DISTINCT date 
+    FROM "Analytics".vw_predictive_features 
+    WHERE date BETWEEN '2023-01-01' AND '2025-12-31'
+    ORDER BY date
   )
   SELECT date INTO v_split_date 
   FROM ordered_dates 
@@ -57,7 +62,7 @@ BEGIN
     f.flow_type,
     ROUND(f.historical_actual_volume * (1.0 + (random() * 0.05 - 0.025)))::integer
   FROM "Analytics".vw_predictive_features f
-  WHERE f.date >= v_split_date;
+  WHERE f.date >= v_split_date AND f.date <= '2025-12-31';
 
   -- 3. Calculate regression metrics (RMSE, MAPE) on D_test
   SELECT 

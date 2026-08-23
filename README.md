@@ -130,10 +130,12 @@ node run_pipeline.js
 ## 5. Analytics Layers (Descriptive & Predictive)
 
 ### 5a. Descriptive Analytics
-*   **Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Pre-computes 80th (Warning) and 90th (Critical) percentiles for every station, day of week, hour period, and flow direction (3,172 baseline records).
+*   **Dynamic Year Ingestion (`Analytics.rebuild_vw_hourly_actuals()`):** Stored procedure that dynamically discovers all `AFCS.ridership_YYYY` tables and compiles `Analytics.vw_hourly_actuals` with zero manual SQL modifications across arbitrary year ranges.
+*   **Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Pre-computes 80th (Warning, $P_{80}$) and 90th (Critical, $P_{90}$) percentiles for every station, day of week, hour period, and flow direction (3,172 baseline records), strictly calibrated to the post-lockdown window (`2023-01-01` to `2025-12-31`).
 *   **Historical Capacity Benchmarking (`public.descriptive_historical_capacity_benchmarking`):** Calculates the live Commuter Friction Index (CFI) by combining weather, academic, civic, and operational trigger weights (25% / 15% / 35% / 25%).
 
 ### 5b. Predictive Analytics (ML Integration & What-If Simulator)
+*   **Dynamic Predictive Features (`Analytics.rebuild_vw_predictive_features()`):** Generates unified feature vectors across all ingested historical years for ML training and scenario simulation.
 *   **Model Predictions (`Analytics.predictive_model_outputs`):** Decoupled storage landing table for external ML model runner predictions ($B_m$).
 *   **Model Performance (`Analytics.predictive_model_performance`):** Logs XGBoost MAPE/RMSE and RandomForest accuracy/recall.
 *   **Dynamic Volume Adjuster (`Analytics.vw_predictive_metrics`):** Queries a rolling 366-day calendar CTE starting from `CURRENT_DATE`, dynamically scaling forecasts based on weather (-17.5%), academic (+30%), civic (-45%), and GCS operational standstills (-30%) shocks. Falls back to historical medians ($P_{50}$) if model outputs are not yet populated.
