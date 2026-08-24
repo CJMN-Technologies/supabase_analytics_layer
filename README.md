@@ -71,8 +71,8 @@ Triggers process qualitative logs on-write and save them under short, unique IDs
   - GCS Mobile Incidents: `INC-[MMDD]-[INCIDENT_ID]`
   - Auto-normalizes class suspension and online modality shift events to binary score `1.0` (Step 3c).
   - Automatically propagates `source_url` (Facebook announcement permalink) and `description` (raw post text) into consolidated records.
-  - Non-disruptive LGU weather monitoring, rainfall advisories, river maintenance, and road flood updates are classified as `LGU Weather / Flooding Advisory` (`affects_ridership = FALSE`), preventing false-positive capacity dampeners or erroneous `"University Milestone / Surge"` tags.
-  - Unofficial student council petitions, academic leniency requests, clinical/health examinations (e.g. FriendlyCare breast/dental/medical checkups), public employment/job fairs (PESO notices), and ID processing schedules are automatically categorized as non-disruptive administrative items (`affects_ridership = FALSE`), preventing false-positive passenger surges.
+  - Non-disruptive LGU weather monitoring, rainfall advisories, river maintenance, estero clean-up operations, and road flood updates are classified as `LGU Weather / Flooding Advisory` or `LGU Municipal Clearing & Maintenance` (`affects_ridership = FALSE`), preventing false-positive capacity dampeners or erroneous `"Holiday"` / `"University Milestone / Surge"` tags.
+  - Unofficial student council petitions, academic leniency requests, clinical/health examinations (e.g. FriendlyCare breast/dental/medical checkups), public employment/job fairs (PESO notices), student ID processing schedules, and studio photoshoot/yearbook/toga rental advisories are automatically categorized as non-disruptive administrative items (`affects_ridership = FALSE`), preventing false-positive passenger surges or spurious `WARNING` alerts.
   - Position-aware regex date parser extracts the earliest primary event date (prioritizing Day-Month and Month-Day based on text appearance) to avoid picking up incidental holiday mentions in memo footnotes.
   - Automatically deduplicates and updates existing rows `ON CONFLICT (id) DO UPDATE` to prevent data duplication.
 - **Weather Consolidated (`external.weather_consolidated`):**
@@ -227,6 +227,18 @@ Every trigger weight in `external.friction_weight` is directly backed by publish
 ### 🛡️ Explicit Scraped Event Cancellation & Classification Rules
 - **Explicit Cancellation Rule:** An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`). In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
 - **Resilient Regex Classification:** `external.classify_event_from_text` employs generalized regular expressions to eliminate verb-tense locks (`is|are`), support hashtag variations (`#WalangPasok` via `walang\s*pasok`), accommodate general suspension phrasing (`class(es)?\s+.*suspend`, `work\s+.*suspend`), and capture online synchronous/asynchronous shifts.
+
+---
+
+## 5. Database Composite Index Optimization
+
+To guarantee sub-15ms execution latency under multi-year AFCS ridership and time-series environmental logs, composite indexes are provisioned via [`Analytics/sql/add_composite_indexes.sql`](file:///c:/Users/Jed/LRT/Analytics/sql/add_composite_indexes.sql):
+- **`external.events_consolidated`**: `(event_date, station)` — Fast date-range queries for predictive timeline event overlays.
+- **`external.weather_current`**: `(station, observed_at DESC)` — Instant retrieval of latest weather friction metrics.
+- **`gcs.incidents`**: `(station_name, status, created_at DESC)` & partial index `WHERE status != 'resolved'` — Real-time urban trigger feeds.
+- **`"Analytics".protocol_task_status`**: `(station_name, task_name, active_action)` — Sub-second bidirectional synchronization between Command Center and Ground Control.
+- **`"Analytics".prescriptive_task_checklist`**: `(decision_action, task_order)` — Rapid compilation of APTA crowd management protocols.
+- **`iam.audit_logs`**: `(created_at DESC, actor_id)` — High-speed audit compliance log retrieval.
 
 *Full academic attributions and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
 
