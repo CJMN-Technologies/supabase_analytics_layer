@@ -1,9 +1,9 @@
 -- ============================================================================
 -- Migration: uat_metrics_append_only_ledger.sql
--- Purpose: Automated, immutable time-series UAT metrics for Predictive & Prescriptive validation
+-- Purpose: Automated, immutable time-series prescriptive evaluation baselines & metrics ledger
 -- ============================================================================
 
--- 1. Predictive Model UAT Evaluation Ledger
+-- 1. Predictive Model Prescriptive Baseline Evaluation Ledger
 CREATE TABLE IF NOT EXISTS "Analytics".uat_predictive_evaluation_logs (
     id BIGSERIAL PRIMARY KEY,
     run_id UUID NOT NULL DEFAULT gen_random_uuid(),

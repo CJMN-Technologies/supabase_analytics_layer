@@ -53,8 +53,7 @@ async function verifyIntegrity(client) {
     'ridership_2022',
     'ridership_2023',
     'ridership_2024',
-    'ridership_2025',
-    'student_transactions'
+    'ridership_2025'
   ];
 
   let allPassed = true;
@@ -136,40 +135,7 @@ async function verifyIntegrity(client) {
     }
   }
 
-  // Check 4: Student transactions monthly sum check
-  console.log(`\nValidating student transaction monthly totals vs backups...`);
-  const monthlySumQuery = `
-    SELECT
-      b.year,
-      b.month_number,
-      b.student_transactions AS original_total,
-      SUM(e.total_entry) FILTER (WHERE e.time_period != 'DAILY_TOTAL') AS expanded_entry,
-      SUM(e.total_exit) FILTER (WHERE e.time_period != 'DAILY_TOTAL') AS expanded_exit
-    FROM "AFCS".student_transactions_backup b
-    LEFT JOIN "AFCS".student_transactions e
-      ON EXTRACT(year FROM e.date) = b.year AND EXTRACT(month FROM e.date) = b.month_number
-    WHERE b.is_total = false AND b.student_transactions > 0
-    GROUP BY b.year, b.month_number, b.student_transactions
-    ORDER BY b.year, b.month_number;
-  `;
-  const mRes = await client.query(monthlySumQuery);
-  let monthlyMatch = true;
-  for (const row of mRes.rows) {
-    const orig = parseInt(row.original_total, 10);
-    const ent = parseInt(row.expanded_entry, 10);
-    const ext = parseInt(row.expanded_exit, 10);
-    if (orig !== ent || orig !== ext) {
-      console.log(`  ❌ Month ${row.year}-${row.month_number}: FAILED (Original: ${orig}, Entry Sum: ${ent}, Exit Sum: ${ext})`);
-      monthlyMatch = false;
-      allPassed = false;
-    }
-  }
-
-  if (monthlyMatch) {
-    console.log(`  🟢 Monthly sum validation: PASSED (All non-zero months match perfectly with original transactions)`);
-  }
-
-  // Check 5: Events Consolidated Classification & Normalization Checks
+  // Check 4: Events Consolidated Classification & Normalization Checks
   console.log(`\nValidating events classification & normalization...`);
   
   // 5a. False Positive Meeting/Ocular Check
@@ -532,10 +498,7 @@ async function main() {
     // 5. Transform 5-year data to hourly
     await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'transform_ridership_hourly.sql'));
 
-    // 6. Expand student transactions
-    await runSQLFile(client, path.join(__dirname, 'Transformation Layer', 'internal', 'expand_student_transactions.sql'));
-
-    // 7. Generate Descriptive Analytics Layer (New Analytics Step)
+    // 6. Generate Descriptive Analytics Layer (New Analytics Step)
     await runSQLFile(client, path.join(__dirname, 'Analytics Layer', 'descriptive', 'generate_descriptive_analytics.sql'));
 
     // 8. Generate Predictive Analytics Layer (New Analytics Step)

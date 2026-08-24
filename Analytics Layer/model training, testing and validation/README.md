@@ -14,8 +14,8 @@ To accurately isolate and evaluate system performance, the validation methodolog
 1. **Predictive Accuracy:** Evaluates the mathematical forecasting engine (the continuous volume predictions of XGBoost and the discrete risk classification of the Random Forest).
 2. **Prescriptive Validation:** Evaluates the decision-making logic of the heuristic Decision Trees and the data-broadcast speed of the cloud pipeline.
 
-## 1.3 Simulated Scenario Injection (UAT)
-Live operational stress testing—which historically relied on Command Center staff logging physical reaction times during real-world anomalies—has been completely removed to eliminate human interference from the system's grading. Instead, User Acceptance Testing (UAT) is conducted via **Simulated Scenario Injection**. In a controlled sandbox environment, historical anomaly datasets (e.g., past severe weather alerts or sudden class suspensions) are fed into the pipeline. This safely and mathematically verifies both the predictive accuracy and the prescriptive logic.
+## 1.3 Simulated Scenario Injection (Prescriptive Baselines)
+Live operational stress testing—which historically relied on Command Center staff logging physical reaction times during real-world anomalies—has been completely removed to eliminate human interference from the system's grading. Instead, prescriptive baselines evaluation is conducted via **Simulated Scenario Injection**. In a controlled sandbox environment, historical anomaly datasets (e.g., past severe weather alerts or sudden class suspensions) are fed into the pipeline. This safely and mathematically verifies both the predictive accuracy and the prescriptive logic.
 
 ## 1.4 Minimum Viable Performance Benchmarks
 To be deemed production-ready for the client, the LRT-2 Decision Support System (LRT2 DSS) must achieve or exceed the following concrete Minimum Viable Performance (MVP) passing grades during the simulation phase:
@@ -96,7 +96,7 @@ The models are exposed to the unseen $D_{test}$ dataset. The system evaluates th
 * It calculates the **Weighted F1-Score** for the Random Forest classification, ensuring a balance of precision and recall with a score $\ge 0.85$.
 
 ### Step 4: Phase 2 Validation (Simulated Scenario Injection)
-To validate the prescriptive logic without relying on unpredictable human operations, the testing shifts to User Acceptance Testing (UAT) via **Simulated Scenario Injection**. The system is fed historical anomaly datasets (e.g., severe weather events or sudden class suspensions) in a controlled sandbox environment. The Decision Tree processes these simulated surges to generate tactical "Man-Protocols."
+To validate the prescriptive logic without relying on unpredictable human operations, the testing shifts to prescriptive evaluation baselines via **Simulated Scenario Injection**. The system is fed historical anomaly datasets (e.g., severe weather events or sudden class suspensions) in a controlled sandbox environment. The Decision Tree processes these simulated surges to generate tactical "Man-Protocols."
 
 ### Step 5: Heuristic Compliance and Latency Certification
 During the simulation, the system audits the outputs of the Prescriptive Layer and the speed of the cloud architecture:

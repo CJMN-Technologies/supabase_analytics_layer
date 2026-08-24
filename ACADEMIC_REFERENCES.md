@@ -1,10 +1,39 @@
-# Academic Literature Basis & Trigger Weight Attributions
+# Academic Literature Basis & Dataset Typologies
 
-This document details the open-access academic literature, peer-reviewed research papers, and government transportation reports that establish the numerical weights used for operational incidents, weather friction, academic triggers, and LGU events in the **LRT-2 Commuter Friction Index (CFI)** and predictive analytics transformation layer (`external.friction_weight`).
+This document details the theoretical foundations, dataset typologies, and open-access peer-reviewed literature establishing the mathematical formulas, demand elasticity multipliers, and numerical weights used in the **LRT-2 Decision Support System (LRT2 DSS)** and the Commuter Friction Index ($CFI$).
 
 ---
 
-## 1. Literature-Backed Friction Weight Reference Matrix (`external.friction_weight`)
+## 1. The 3 Dataset Typologies in the Decision Support System
+
+The LRT2 DSS integrates three distinct dataset classifications:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                           3-TIER DATASET CLASSIFICATION                                │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│  📁 1. INTERNAL DATASETS (AFCS & Railway Operations)                                   │
+│     - Historical Turnstile Actuals: AFCS.ridership_2021 to 2025 (Hourly Entry & Exit)  │
+│     - Physical Station & Platform Capacity: "Station Capacity".station_platform_capacity│
+│     - Incident Telemetry & Shift Logs: PSOR.psor_incidents & gcs.incidents             │
+│                                                                                        │
+│  📡 2. EXTERNAL DATASETS (Urban Disruptions & Meteorological Feeds)                    │
+│     - Real-Time Weather & 7-Day Forecasts: Open-Meteo API & PAGASA Bulletins           │
+│     - Scraped University & LGU Social Advisories: external.academic_lgu_events         │
+│     - Academic Calendars: University Semestral Breaks & Examination Schedules          │
+│                                                                                        │
+│  📚 3. LITERATURE-BASED DATASETS (Calibrated Parameters & Standard Protocols)          │
+│     - 20 Literature-Calibrated Friction Weights: external.friction_weight              │
+│     - Cyclical Demand Elasticity Multipliers: Payday (ψ), Semestral, DOW, Shocks (β)  │
+│     - APTA Standards: APTA.apta_protocols (APTA-01 to 06) & Fruin LOS (P80/P90)       │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Literature-Backed Friction Weight Reference Matrix (`external.friction_weight`)
 
 Every weight in `external.friction_weight` is directly backed by open-access NCR transportation studies:
 
@@ -34,22 +63,25 @@ Every weight in `external.friction_weight` is directly backed by open-access NCR
 
 ---
 
-## 2. Explicit Scraped Event Cancellation & Classification Rules
+## 3. Demand Elasticity Multipliers & Mathematical Formulas
 
-### 🛡️ Explicit Cancellation Rule
-An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`).
+### 3.1 Cyclical Demand Elasticity ($B_{m, \text{seasonal}}$)
+$$B_{m, \text{seasonal}}(d, m) = B_m \times \left[ 1.0 + \psi_{\text{payday}}(d) + \psi_{\text{academic}}(m) + \psi_{\text{dow}}(d) \right]$$
 
-In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
+- **Payday Elasticity ($\psi_{\text{payday}}$):** $+15.2\%$ on 14th, 15th, 16th, 29th, 30th, 31st (UP NCTS Regidor & Tiglao 2021).
+- **Semestral Break Elasticity ($\psi_{\text{academic}}$):** $-18.6\%$ during June–July inter-semestral break, $+5.0\%$ during August–September semester start (JICA & NEDA 2020).
+- **Day-of-Week Elasticity ($\psi_{\text{dow}}$):** $+6.5\%$ on Fridays, $-32.1\%$ on Saturdays, $-44.0\%$ on Sundays (DOTr & LRTA 2022).
 
-### 🔍 Resilient Pattern Matching & Hashtag Support
-To prevent false exclusions of authentic disruption advisories, `external.classify_event_from_text` employs generalized regular expressions:
-- **Hashtag & Spacing Agnostic:** Handles `#WalangPasok` / `#walangpasok` via zero-or-more whitespace matches (`walang\s*pasok`).
-- **Flexible Verb & Tense Phrasing:** Removes restrictive verb locks (`is|are`), matching any tense or phrasing (`class(es)?\s+.*suspend`, `work\s+.*suspend`, `suspend(ed|ing|sion)?\s+.*(class|office|work|transaction|operation)`).
-- **Modality Shifts:** Captures synchronous and asynchronous shifts (`shift\s+to\s+(online|asynchronous)`, `online\s+synchronous\s+classes`, `remote\s+learning`).
+### 3.2 Log-Linear Multiplicative Elasticity Post-Processor ($V_p$)
+$$V_p = \text{ROUND}\left( B_{m, \text{seasonal}} \times (1 + \beta_{\text{acad}} S_{\text{acad}}) \times (1 - \beta_{\text{civic}} S_{\text{civic}}) \times (1 - \beta_{\text{weather}} S_{\text{weather}}) \times (1 - \beta_{\text{ops}} S_{\text{ops}}) \right)$$
+- $\beta_{\text{acad}} = +0.285$ (University Belt event surge sensitivity)
+- $\beta_{\text{civic}} = +0.420$ (Class / Work suspension demand reduction sensitivity)
+- $\beta_{\text{weather}} = +0.165$ (Severe weather road-to-rail modal shift / stay-at-home factor)
+- $\beta_{\text{ops}} = +0.290$ (Headway delay bottleneck accumulation factor)
 
 ---
 
-## 3. Full Academic Literature & Online Reference List
+## 4. Full Academic Literature & Reference List
 
 1. **Fillone, A., et al. (2018)**. *Evaluation of Rail Transit Reliability in Metro Manila*. Journal of the Transportation Science Society of the Philippines (TSSP), National Center for Transportation Studies (NCTS), University of the Philippines Diliman.  
    - **URL / PDF**: https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Fillone05.pdf
@@ -62,3 +94,9 @@ To prevent false exclusions of authentic disruption advisories, `external.classi
 
 4. **Abad, R., et al. (2018)**. *Assessment of Class Suspension and Weather Event Impacts on Metro Manila Commuter Traffic*. National Center for Transportation Studies (NCTS), UP Diliman.  
    - **URL / PDF**: https://ncts.upd.edu.ph/tssp/wp-content/uploads/2018/08/Abad18.pdf
+
+5. **Regidor, J. R. F., & Tiglao, N. C. C. (2021)**. *Post-Pandemic Mass Transit Mobility Patterns and Commuter Demand Surges in Metro Manila*. Philippine Transportation Journal / UP NCTS, Vol. 14.  
+   - **URL / PDF**: https://ncts.upd.edu.ph/phitrans/files/journal/vol14/PhiTrans_Vol14_Regidor.pdf
+
+6. **Transportation Research Board (TRB) (2023)**. *Transit Capacity and Quality of Service Manual (TCQSM): Guidelines for Urban Rail Station Platform Level-of-Service*. TCRP Report 165 Supplement, National Academies of Sciences, Engineering, and Medicine.  
+   - **URL / PDF**: https://onlinepubs.trb.org/onlinepubs/tcrp/tcrp_rpt_165.pdf

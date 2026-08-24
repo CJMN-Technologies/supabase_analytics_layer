@@ -1,8 +1,8 @@
 # Supabase Transformation & Orchestration Layer (LRT-2 Commuter Friction Index)
 
-This repository contains the database DDL, sync triggers, dynamic ingestion scripts, and validation pipeline for standardizing and transforming the LRT-2 transit ridership logs and environmental factors. 
+This repository contains the database DDL, sync triggers, dynamic ingestion scripts, and validation pipeline for standardizing and transforming the LRT-2 transit ridership logs, meteorological feeds, and environmental urban factors. 
 
-This layer serves as the **landing and transformation zone** to compute the **Commuter Friction Index (CFI)**, which measures the "transport impedance" exerted on commuters by real-world anomalies (like severe weather, university calendar events, and LGU class suspensions).
+This layer serves as the **landing and transformation zone** to compute the **Commuter Friction Index (CFI)**, which measures the "transport impedance" exerted on commuters by real-world anomalies (like severe weather, university calendar events, and LGU class suspensions) and powers the multi-tier analytics engine.
 
 ---
 
@@ -25,8 +25,7 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 │   ├── internal/
 │   │   ├── restore_ridership_backups.sql      # Aggregates raw ridership inputs to backups
 │   │   ├── standardize_internal_dimensions.sql# Standardizes PSOR and Station Capacity dimensions
-│   │   ├── transform_ridership_hourly.sql     # Converts backups to hourly active ridership
-│   │   └── expand_student_transactions.sql    # Distributes student monthly transactions to hourly
+│   │   └── transform_ridership_hourly.sql     # Converts backups to hourly active ridership
 │   ├── external/
 │   │   ├── consolidate_events_schema.sql      # Text classification & scraped events sync
 │   │   ├── consolidate_weather_schema.sql     # Pagasa weather alert parsing & current/forecast weather sync
@@ -35,7 +34,8 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 │   │   └── standardize_literature_dimensions.sql # Sets up APTA tables and seeds weights
 │   └── applications/
 │       ├── iam_portal_schema.sql              # User profiles, administrative logs, and custom RBAC DDL
-│       └── ground_control_schema.sql          # Mobile shifts, incidents, emergency contacts, and real-time sync triggers
+│       ├── ground_control_schema.sql          # Mobile shifts, incidents, emergency contacts, and real-time sync triggers
+│       └── uat_metrics_append_only_ledger.sql # Immutable prescriptive evaluation baselines & metrics ledger
 ├── run_pipeline.js                            # Core orchestration runner and data integrity check suite
 ├── package.json                               # Node dependencies (pg, @supabase/supabase-js)
 ├── .env.example                               # Template for database credentials
@@ -44,17 +44,38 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 
 ---
 
-## 3. Database Schema & Standardization Rules
+## 3. The 3 Dataset Typologies
 
-### 3a. Dimension Tables (SCD Type 1)
+The analytics layer harmonizes three distinct dataset typologies to produce actionable decision support:
+
+### 3a. Internal Datasets (AFCS & Transit Operations)
+- **Turnstile Actuals (`AFCS.ridership_2021` to `ridership_2025`):** Complete historical hourly passenger entry and exit counts across all 13 LRT-2 stations.
+- **Station Platform Capacity (`"Station Capacity".station_platform_capacity`):** Physical station and platform dimensions, maximum safe passenger capacity ($K_p$), and concourse physical limits.
+- **PSOR Incident Logs (`PSOR.psor_incidents` & `gcs.incidents`):** Operational incident logs, degraded headway reports, and field safety telemetry.
+
+### 3b. External Datasets (Urban Triggers & Meteorological Feeds)
+- **PAGASA & Open-Meteo Weather Streams (`external.weather_current`, `external.weather_forecasts`):** Hourly meteorological metrics across the 13-station corridor, including rainfall intensity (mm/hr) and Tropical Cyclone Wind Signals (TCWS #1 to #5).
+- **Social & Advisory Disruption Scrapes (`external.academic_lgu_events`):** Near real-time scraped announcements from 18+ university and LGU official communication channels (class suspensions, entrance exams, graduations, transport strikes, civic rallies).
+- **Academic Calendars:** Official university term schedules, semestral breaks, and exam week schedules.
+
+### 3c. Literature-Based Datasets (Standardized Parameters, Elasticity & APTA Standards)
+- **20 Literature-Calibrated Friction Weights (`external.friction_weight`):** Empirical friction weights ($0.00$ to $1.00$) backed by peer-reviewed studies (UP NCTS, JICA, EASTS, LRTA).
+- **Cyclical Demand Elasticity Multipliers:** Payday ($\psi_{\text{payday}} = +15.2\%$), semestral break ($\psi_{\text{academic}} = -18.6\%$), and day-of-week demand multipliers ($\psi_{\text{dow}}$) calibrated from local transit studies.
+- **APTA Standards & Fruin Level of Service (LOS):** American Public Transportation Association crowd management standards (`APTA-01` to `APTA-06`) and TCQSM TCRP Report 165 percentile benchmarks (80th percentile Warning $W_t$, 90th percentile Critical $C_t$).
+
+---
+
+## 4. Database Schema & Standardization Rules
+
+### 4a. Dimension Tables (SCD Type 1)
 All lookups have been standardized to clean, human-readable primary keys instead of long composite formats:
 - `APTA.apta_protocols` (IDs: `APTA-01`, `APTA-02`, ...)
 - `PSOR.psor_incidents` (IDs: `PSOR-01`, `PSOR-02`, ...)
 - `"Station Capacity".station_platform_capacity` (IDs: `CAP-REC` for Recto, `CAP-LEG` for Legarda, ...)
 - `external.friction_weight` (IDs: `FRI-ACxx` for Academic Surge, `FRI-PAxx` for Weather Alerts, `FRI-OPxx` for GCS Incidents)
 
-### 3ab. Standardized Application IDs
-All application-level keys have been migrated from raw UUID hashes to sequence-based standardized string formats for direct readability:
+### 4b. Standardized Application IDs
+All application-level keys have been migrated from raw UUID hashes to sequence-based standardized string formats:
 - **`iam.users`:** `POxxxx` (Provision Officer), `CCOxxxx` (Command Center Officer), and `GCSxxxx` (Ground Control Staff).
 - **`iam.audit_logs`:** `AUDxxxxxx` (Audit Logs).
 - **`gcs.shifts`:** `SHFxxxxxx` (Ground Shifts).
@@ -63,37 +84,22 @@ All application-level keys have been migrated from raw UUID hashes to sequence-b
 - **`Analytics.simulation_history`:** `SIMxxxxxx` (Stress Simulations).
 - **`Analytics.prescriptive_protocol_deployments`:** `DEPxxxxxx` (APTA Deployments).
 
-### 3b. Real-Time Consolidated Tables
+### 4c. Real-Time Consolidated Tables
 Triggers process qualitative logs on-write and save them under short, unique IDs:
 - **Events Consolidated (`external.events_consolidated`):**
   - Scraped events: `SCR-[CATEGORY_CODE]-[MMDD]-[RAW_ID]`
   - Calendar events: `CAL-[SCHOOL_ACRONYM]-[MMDD]-[ROW_ID]`
   - GCS Mobile Incidents: `INC-[MMDD]-[INCIDENT_ID]`
-  - Auto-normalizes class suspension and online modality shift events to binary score `1.0` (Step 3c).
+  - Auto-normalizes class suspension and online modality shift events to binary score `1.0`.
   - Automatically propagates `source_url` (Facebook announcement permalink) and `description` (raw post text) into consolidated records.
   - Non-disruptive LGU weather monitoring, rainfall advisories, river maintenance, estero clean-up operations, and road flood updates are classified as `LGU Weather / Flooding Advisory` or `LGU Municipal Clearing & Maintenance` (`affects_ridership = FALSE`), preventing false-positive capacity dampeners or erroneous `"Holiday"` / `"University Milestone / Surge"` tags.
   - Unofficial student council petitions, academic leniency requests, clinical/health examinations (e.g. FriendlyCare breast/dental/medical checkups), public employment/job fairs (PESO notices), student ID processing schedules, and studio photoshoot/yearbook/toga rental advisories are automatically categorized as non-disruptive administrative items (`affects_ridership = FALSE`), preventing false-positive passenger surges or spurious `WARNING` alerts.
-  - Position-aware regex date parser extracts the earliest primary event date (prioritizing Day-Month and Month-Day based on text appearance) to avoid picking up incidental holiday mentions in memo footnotes.
   - Automatically deduplicates and updates existing rows `ON CONFLICT (id) DO UPDATE` to prevent data duplication.
 - **Weather Consolidated (`external.weather_consolidated`):**
   - Weather Current: `WTH-CUR-[STATION]`
   - Weather Forecasts: `WTH-FCT-[ID]`
 
-### 3c. Application Schemas & Real-Time Sync Triggers
-We support three personas (Provision Officers `PO`, Command Center Officers `CCO`, Ground Control Staff `GCS`) across two applications:
-- **I.A.M Portal (`iam` Schema):**
-  - `iam.users` manages system directories, unique security activation keys, and profile URLs linking to the `personnel-images` Supabase storage bucket.
-  - `iam.audit_logs` tracks Provision Officer administrative actions (user provisioning, active status toggles) for audit compliance.
-  - **Self-Binding & Profile Updates (`user_update_profile`):** Restricts anonymous visibility of registered user accounts and allows authenticated staff members to self-bind their authenticated user IDs (`auth_user_id = auth.uid()`) upon entering their unique `security_key` and update profile fields.
-- **Ground Control System (`gcs` Schema):**
-  - `gcs.shifts` maps GCS personnel shift jurisdiction assignments to specific LRT-2 stations.
-  - `gcs.incidents` logs crowd, platform, sanitation, concourse, or emergency events reported from mobile devices. The `incident_type` is controlled via a custom PostgreSQL Enum (`gcs.incident_category`) aligned with the PSOR schema categories + `'Other'`. Severity is restricted to `'Critical'` and `'Warning'`.
-  - `gcs.emergency_contacts` seeds and hosts dynamic dialer hotlines for mobile clients.
-  - **Real-Time Sync Trigger (`tg_sync_gcs_incidents`):** Maps GCS incidents into `external.events_consolidated` as `'operational'` friction domain events. If the type is `'Other'`, the trigger captures their custom description and formats the event name as `'Other: <description> (<severity>)'`.
-  - **Automatic Resolution Timestamp (`tg_set_resolved_timestamp`):** Automatically populates `resolved_at = now()` when an incident status is set to `'resolved'`, and clears it if reopened.
-  - **Automatic Resolution Cleanup:** Setting an incident status to `'resolved'` or deleting the row immediately purges the record from the events feed in real-time.
-
-### 3d. Dynamic Proportional Ingestion
+### 4d. Dynamic Proportional Ingestion
 Ridership tables (`ridership_2021` to `ridership_2025` and incoming future tables) are transformed from non-standard daily/off-peak bands into a continuous hourly scale:
 - Auto-renames incoming source tables to `*_backup` to preserve data lineage.
 - Scans and maps station columns dynamically, ignoring garbage or dummy columns.
@@ -102,75 +108,69 @@ Ridership tables (`ridership_2021` to `ridership_2025` and incoming future table
 
 ---
 
-## 4. Setup & Running the Pipeline
+## 5. The 3-Tier Analytics Architecture
 
-### Prerequisites
-- Node.js (v18+)
-- A running Supabase PostgreSQL database with the `pg_cron` extension enabled.
-
-### 1. Configure Credentials
-Duplicate `.env.example` to `.env` and fill in your connection details:
-```bash
-cp .env.example .env
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        3-TIER ANALYTICS DECISION INTELLIGENCE                          │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│  📊 TIER 1: DESCRIPTIVE ANALYTICS LAYER                                                │
+│     - Commuter Friction Index: CFI = (W_w × P_idx) + (W_a × A_sw) + (W_c × L_sp)        │
+│     - 20 Literature-Calibrated Friction Weights (external.friction_weight)             │
+│     - Non-Parametric Percentile Benchmarking: Warning (P_80), Critical (P_90)          │
+│                                                                                        │
+│  📈 TIER 2: PREDICTIVE ANALYTICS LAYER                                                 │
+│     - Machine Learning Forecasting: XGBoost (Volume B_m) & Random Forest (Risk Level)  │
+│     - Multiplicative Elasticity Post-Processing: V_p = B_m,seasonal × Π(1 + β_k × S_k) │
+│     - Multi-Horizon Forecasting Horizons: 24-Hour Dayparts, 1-Week, Quarterly, 1-Year  │
+│                                                                                        │
+│  🎯 TIER 3: PRESCRIPTIVE ANALYTICS LAYER                                               │
+│     - Interpretable Decision Trees anchored to physical capacity limits (U_p ≥ 80%/90%)│
+│     - Standardized Crowd-Management Directives: APTA-01 through APTA-06                │
+│     - Real-Time Bidirectional Dispatch & Checklist Sync with Ground Control Mobile     │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2. Install Dependencies
-```bash
-npm install
-```
-
-### 3. Run the Database Rebuild & Verification Pipeline
-This script runs the database restores, standardizes schemas and dimensions, executes dynamic transformations, expands student transactions, and performs structural verifications:
-```bash
-node run_pipeline.js
-```
-
----
-
-## 5. Analytics Layers (Descriptive & Predictive)
-
-### 5a. Descriptive Analytics
+### 5a. Tier 1 — Descriptive Analytics Layer
 *   **Dynamic Year Ingestion (`Analytics.rebuild_vw_hourly_actuals()`):** Stored procedure that dynamically discovers all `AFCS.ridership_YYYY` tables and compiles `Analytics.vw_hourly_actuals` with zero manual SQL modifications across arbitrary year ranges.
-*   **Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Pre-computes 80th (Warning, $P_{80}$) and 90th (Critical, $P_{90}$) percentiles for every station, day of week, hour period, and flow direction (3,172 baseline records), strictly calibrated to the post-lockdown window (`2023-01-01` to `2025-12-31`).
-*   **Historical Capacity Benchmarking (`public.descriptive_historical_capacity_benchmarking`):** Calculates the live Commuter Friction Index (CFI) by combining weather, academic, civic, and operational trigger weights (25% / 15% / 35% / 25%).
+*   **Commuter Friction Index (CFI) Mechanics:** Quantifies urban transport impedance as a normalized weighted composite:
+    $$CFI = (W_w \times P_{idx}) + (W_a \times A_{sw}) + (W_c \times L_{sp})$$
+    where weights $W_w = 0.35$ (Meteorological), $W_a = 0.20$ (Academic Surge), and $W_c = 0.45$ (Civic Mandates) are calibrated from empirical transit studies.
+*   **Non-Parametric Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Replaces easily skewed arithmetic means with non-parametric percentiles:
+    $$W_t = P_{80}(X) \quad (\text{Warning Threshold — Fruin LOS D})$$
+    $$C_t = P_{90}(X) \quad (\text{Critical Threshold — Fruin LOS E/F})$$
+    Pre-computed for every station, day of week, hour period, and flow direction (3,172 baseline records), strictly calibrated to the post-lockdown window (`2023-01-01` to `2025-12-31`).
 
-### 5b. Predictive Analytics (ML Integration & What-If Simulator)
-*   **Dynamic Predictive Features (`Analytics.rebuild_vw_predictive_features()`):** Generates unified feature vectors across all ingested historical years for ML training and scenario simulation.
-*   **Model Predictions (`Analytics.predictive_model_outputs`):** Decoupled storage landing table for external ML model runner predictions ($B_m$).
-*   **Model Performance (`Analytics.predictive_model_performance`):** Logs XGBoost MAPE/RMSE and RandomForest accuracy/recall.
-*   **Dynamic Volume Adjuster (`Analytics.vw_predictive_metrics`):** Queries a rolling 366-day calendar CTE starting from `CURRENT_DATE`, dynamically scaling forecasts based on weather (-17.5%), academic (+30%), civic (-45%), and GCS operational standstills (-30%) shocks. Falls back to historical medians ($P_{50}$) if model outputs are not yet populated.
-*   **What-If Simulator (`"Analytics".predictive_what_if_scenario_simulator`):** Analytics wrapper function to test hypothetical triggers and calculate peak variance and threat levels in under 5ms:
-    ```sql
-    SELECT * FROM "Analytics".predictive_what_if_scenario_simulator('Katipunan', 1, '17:00', 'entry', 0.8, 1.0, 0.0, 1000);
-    ```
+### 5b. Tier 2 — Predictive Analytics Layer
+*   **Machine Learning Forecasting ($B_m$):** Decoupled XGBoost regression models trained on historical turnstiles (`Analytics.vw_predictive_features`), outputting unperturbed baseline predictions ($B_m$) stored in `Analytics.predictive_model_outputs`.
+*   **Multiplicative Elasticity Post-Processor ($V_p$):** Applies log-linear elasticity sensitivities ($\beta_k$) against real-time friction shocks ($S_k$):
+    $$V_p = \text{ROUND}\left( B_{m, \text{seasonal}} \times (1 + \beta_{\text{acad}} S_{\text{acad}}) \times (1 - \beta_{\text{civic}} S_{\text{civic}}) \times (1 - \beta_{\text{weather}} S_{\text{weather}}) \times (1 - \beta_{\text{ops}} S_{\text{ops}}) \right)$$
+*   **Multi-Horizon Timeline Endpoints:**
+    - `Analytics.predictive_passenger_volume_forecast_24h` (Rolling 24h dayparts: Morning Rush, Midday Off-Peak, Evening Surge, Night Taper)
+    - `Analytics.predictive_passenger_volume_forecast_1w` (7-day daily volume projection)
+    - `Analytics.predictive_passenger_volume_forecast_quarterly` (Quarterly seasonal volume distributions)
+    - `Analytics.predictive_passenger_volume_forecast_1y` (Indexed 1-year macroeconomic trend table for 0ms queries)
+*   **Interactive What-If Scenario Simulator (`"Analytics".predictive_what_if_scenario_simulator`):** Analytics wrapper executing custom what-if disruptions with Gaussian duration envelopes in under 5ms.
 
-### 5c. Analytics Layer Views (Dashboard Endpoints)
-Exposed in the `"Analytics"` schema for direct REST API client queries:
-*   `"Analytics".descriptive_live_event_feed` (Live event feed & trigger aggregation with **3-tier literature-backed severity calibration**: Critical for $F_s \ge 0.80$ like class suspensions, transport strikes, Red rainfall ($>30$mm), and Typhoon Signal 2+; Warning for $0.45 \le F_s < 0.80$ like arena concerts, Orange/Yellow rainfall ($7.5–30$mm), and Typhoon Signal 1; and Informational/Low for $F_s < 0.45$ like late enrollments, regular registrations, exams, and light/fair weather. Preserves specific contextual event names across all academic, weather, and LGU records).
-*   `"Analytics".predictive_known_events` (Consolidated notable events feed across multi-horizon forecast timelines: Horizon 0 for 24h, Horizon 1 for 1w, Horizons 2–5 for Quarters 1–4, and Horizon 6 for 1y, strictly filtered to specific, descriptive nationwide holidays and major events).
-*   `"Analytics".descriptive_model_auditing_drift_tracking` (Model auditing actuals vs forecasts comparison)
-*   `"Analytics".predictive_topological_route_map` (Node status classification for topological map)
-*   `"Analytics".predictive_passenger_volume_forecast_24h` (Hourly rolling 24h window)
-*   `"Analytics".predictive_passenger_volume_forecast_1w` (Daily rollup for 7 days)
-*   `"Analytics".predictive_passenger_volume_forecast_1m` (Daily rollup for 30 days)
-*   `"Analytics".predictive_passenger_volume_forecast_quarterly` (Monthly rollup by Quarter)
-*   `"Analytics".predictive_passenger_volume_forecast_1y` (Monthly rollup for 12 months)
-*   `"Analytics".prescriptive_active_checklists` (Actionable checklists mapping tactical steps to 'Command Center Officer' or 'Ground Control Staff' roles, compiling the union of tactics from all parallel recommendations).
-*   `"Analytics".prescriptive_action_recommendations` (Actionable risk directives mapping to APTA protocol IDs `'APTA-01'` through `'APTA-06'`. Uses `UNNEST` on arrays to recommend multiple protocols simultaneously when thresholds are crossed).
+### 5c. Tier 3 — Prescriptive Analytics Layer
+*   **Interpretable Decision Trees:** Anchored directly to deterministic physical platform capacity utilization ($U_p = \frac{V_c}{K_p} \times 100$), avoiding opaque black-box AI in life-safety operations.
+*   **APTA Crowd-Control Directives:** Routes outputs to pre-approved human-centric "Man-Protocols" (`APTA-01` Platform Metering, `APTA-02` Turnstile Throttling, `APTA-03` Escalator Directional Control, `APTA-04` Headway Compression, `APTA-05` Bus Augmentation, `APTA-06` Station Evacuation).
+*   **Real-Time Dispatch Checklists (`Analytics.prescriptive_active_checklists`):** Automatically compiles and dispatches actionable tactical checklists to Ground Control Mobile clients, with sub-second bidirectional acknowledgment tracking in `Analytics.protocol_task_status`.
 
-### 5d. Model Training, Testing & UAT Audit Pipeline
-The model training, testing, and validation pipeline partitions turnstile data chronologically (80% training / 20% test) and runs performance checks against the four operational benchmarks:
+### 5d. Model Training, Testing & Prescriptive Baseline Audit Pipeline
+The model training, testing, and validation pipeline partitions turnstile data chronologically (80% training / 20% test) and runs validation against four operational benchmarks:
 1. **Volume Prediction Variance ($MVP_{rmse}$):** Variance (RMSE % of mean volume) must be $< 5.00\%$.
 2. **Risk Classification F1-Score ($MVP_{f1}$):** Weighted F1-score of the threat classifier must be $\ge 0.85$.
-3. **Heuristic Compliance ($MVP_{scr}$):** Symbolic Heuristic Compliance Rate (SCR) of deployments must be $100\%$.
-4. **Cloud Pipeline Latency ($MVP_{latency}$):** Ingestion-to-broadcast latency must be $< 3.0$ seconds.
+3. **Symbolic Heuristic Compliance ($MVP_{scr}$):** Compliance rate of deployments to valid APTA protocols must be $100\%$.
+4. **Cloud Pipeline Latency ($MVP_{latency}$):** Ingestion-to-broadcast latency ($L_{ib} = T_b - T_i$) must be $< 3.0$ seconds.
 
-#### Dual-Write Append-Only UAT Metrics Architecture:
-Rather than overwriting single snapshot cells on repeat test runs, the pipeline uses a dual-write architecture to maintain immutable historical logs for certification and UAT auditing:
+#### Dual-Write Append-Only Prescriptive Evaluation Ledgers:
 * **`"Analytics".predictive_model_performance`**: Latest performance snapshot for instant dashboard KPI querying.
 * **`"Analytics".uat_predictive_evaluation_logs`**: Immutable time-series ledger capturing `run_id`, `model_name`, `sample_count`, `rmse`, `mape`, `classification_accuracy`, `f1_score`, and pass/fail gate statuses for every individual test trial.
 * **`"Analytics".uat_prescriptive_execution_logs`**: Immutable ledger capturing prescriptive decision triggers, APTA protocol IDs, ingestion vs broadcast timestamps, and microsecond latency measurements. Evaluated on a **30-minute operational cadence** (`*/30 * * * *` in `pg_cron`), recording **2 distinct evaluation & reset entries per hour** per station.
-* **`"Analytics".vw_uat_executive_summary`**: High-level audit view exposing cumulative all-time UAT passing rates, average historical MAPE/RMSE, overall SCR compliance %, and pipeline latency SLA compliance.
+* **`"Analytics".vw_uat_executive_summary`**: High-level audit view exposing cumulative all-time prescriptive evaluation passing rates, average historical MAPE/RMSE, overall SCR compliance %, and pipeline latency SLA compliance.
 
 The validation pipeline can be executed:
 - **Database-Natively (Recommended):** By calling `SELECT "Analytics".train_and_validate_models();` or executing `"Analytics Layer/model training, testing and validation"/train_and_validate.sql`.
@@ -180,19 +180,18 @@ The validation pipeline can be executed:
 
 ## 6. Verification & Integrity Checks
 
-The Node validation script performs eleven core integrity checks on every active table:
+The Node validation script (`run_pipeline.js`) performs eleven core integrity checks on every active table:
 1. **Row Sum Discrepancy Check:** Verifies that the sum of all individual station entry/exit columns matches the `total_entry` and `total_exit` columns exactly.
 2. **Negative Value Check:** Scans all columns to guarantee that no negative values exist.
 3. **Unique IDs Check:** Validates that there are no duplicate Primary Keys.
-4. **Student Transaction Conservation:** Verifies expanded hourly rows match original monthly transactions.
-5. **Meeting Classifier False Positives:** Asserts 0 planning meetings are classified as active disruptions.
-6. **Class Suspension & Holiday/Break Normalization:** Asserts all school breaks have score `1.0`, and validates that midday suspension announcements apply the transition exit evacuation and decay curves correctly.
-7. **Academic Surge Weight (A_sw) Density:** Validates major event grouping rules (0.5 for 1-2, 1.0 for >=3 events).
-8. **Feature Ingestion Vector:** Validates `Analytics.vw_predictive_features` compiles successfully.
-9. **What-If Math Verification:** Verifies simulation formula calculations match expected output variance.
-10. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views (`24h`, `1w`, `1m`, `quarterly`, and `1y`) return aggregated datasets in < 50ms with zero timeout errors.
-11. **Prescriptive APTA Schema Integrity Check:** Verifies that protocol deployments resolve to valid APTA IDs, checklists map to target roles, and metrics are mathematically compliant.
-12. **Materialized 1-Year Fast Store:** Validates `Analytics.predictive_passenger_volume_forecast_1y` is indexed and populated for 0ms dashboard queries; decoupled from synchronous row-level triggers to guarantee sub-150ms real-time incident logging across Ground Control mobile clients.
+4. **Meeting Classifier False Positives:** Asserts 0 planning meetings are classified as active disruptions.
+5. **Class Suspension & Holiday/Break Normalization:** Asserts all school breaks have score `1.0`, and validates that midday suspension announcements apply the transition exit evacuation and decay curves correctly.
+6. **Academic Surge Weight ($A_{sw}$) Density:** Validates major event grouping rules (0.5 for 1-2, 1.0 for >=3 events).
+7. **Feature Ingestion Vector:** Validates `Analytics.vw_predictive_features` compiles successfully.
+8. **What-If Math Verification:** Verifies simulation formula calculations match expected output variance.
+9. **Multi-Horizon Rollup Queries:** Asserts all 5 dashboard views (`24h`, `1w`, `1m`, `quarterly`, and `1y`) return aggregated datasets in < 50ms with zero timeout errors.
+10. **Prescriptive APTA Schema Integrity Check:** Verifies that protocol deployments resolve to valid APTA IDs, checklists map to target roles, and metrics are mathematically compliant.
+11. **Materialized 1-Year Fast Store:** Validates `Analytics.predictive_passenger_volume_forecast_1y` is indexed and populated for 0ms dashboard queries; decoupled from synchronous row-level triggers to guarantee sub-150ms real-time incident logging across Ground Control mobile clients.
 
 ---
 
@@ -228,18 +227,4 @@ Every trigger weight in `external.friction_weight` is directly backed by publish
 - **Explicit Cancellation Rule:** An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`). In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
 - **Resilient Regex Classification:** `external.classify_event_from_text` employs generalized regular expressions to eliminate verb-tense locks (`is|are`), support hashtag variations (`#WalangPasok` via `walang\s*pasok`), accommodate general suspension phrasing (`class(es)?\s+.*suspend`, `work\s+.*suspend`), and capture online synchronous/asynchronous shifts.
 
----
-
-## 5. Database Composite Index Optimization
-
-To guarantee sub-15ms execution latency under multi-year AFCS ridership and time-series environmental logs, composite indexes are provisioned via [`Analytics/sql/add_composite_indexes.sql`](file:///c:/Users/Jed/LRT/Analytics/sql/add_composite_indexes.sql):
-- **`external.events_consolidated`**: `(event_date, station)` — Fast date-range queries for predictive timeline event overlays.
-- **`external.weather_current`**: `(station, observed_at DESC)` — Instant retrieval of latest weather friction metrics.
-- **`gcs.incidents`**: `(station_name, status, created_at DESC)` & partial index `WHERE status != 'resolved'` — Real-time urban trigger feeds.
-- **`"Analytics".protocol_task_status`**: `(station_name, task_name, active_action)` — Sub-second bidirectional synchronization between Command Center and Ground Control.
-- **`"Analytics".prescriptive_task_checklist`**: `(decision_action, task_order)` — Rapid compilation of APTA crowd management protocols.
-- **`iam.audit_logs`**: `(created_at DESC, actor_id)` — High-speed audit compliance log retrieval.
-
-*Full academic attributions and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
-
-
+*Full academic attributions, dataset typologies, and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
