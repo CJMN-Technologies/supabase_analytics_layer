@@ -643,6 +643,7 @@ DECLARE
     v_stations text[];
     v_station text;
     v_is_reschedule boolean := FALSE;
+    v_source_type text;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         DELETE FROM external.events_consolidated WHERE source_id = OLD.id AND source_table = 'academic_lgu_events';
@@ -651,6 +652,15 @@ BEGIN
 
     -- Resolve affected stations
     v_stations := external.get_affected_stations(NEW.station, NEW.post_text, NEW.image_text, NEW.source_name);
+
+    -- Resolve explicit source_type ('lgu' vs 'academic')
+    v_source_type := CASE 
+        WHEN NEW.category = 'lgu' 
+             OR NEW.id LIKE 'external_lgu_%' 
+             OR (NEW.source_name ~* '(government|public information office|\bpio\b|municipality|mmda)'
+                 AND NOT NEW.source_name ~* '(university|college|school|council|student|varsitarian)') THEN 'lgu'
+        ELSE 'academic'
+    END;
 
     -- Check if this is a cancellation or rescheduling
     IF NEW.is_cancellation = TRUE THEN
@@ -745,7 +755,8 @@ BEGIN
             id, station, event_date, source_table, source_id, source_name,
             event_name, event_category, friction_domain, trigger_category,
             source_url, description,
-            normalized_score, friction_weight_ref, announcement_time, updated_at
+            normalized_score, friction_weight_ref, announcement_time, updated_at,
+            source_type
         )
         VALUES (
             v_scrape_id,
@@ -770,7 +781,8 @@ BEGIN
                 ELSE v_weight
             END,
             NEW.post_date,
-            now()
+            now(),
+            v_source_type
         )
         ON CONFLICT (id) DO UPDATE SET
             station = EXCLUDED.station,
@@ -785,7 +797,8 @@ BEGIN
             normalized_score = EXCLUDED.normalized_score,
             friction_weight_ref = EXCLUDED.friction_weight_ref,
             announcement_time = EXCLUDED.announcement_time,
-            updated_at = now();
+            updated_at = now(),
+            source_type = EXCLUDED.source_type;
     END LOOP;
 
     RETURN NEW;

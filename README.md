@@ -90,6 +90,9 @@ Triggers process qualitative logs on-write and save them under short, unique IDs
   - Scraped events: `SCR-[CATEGORY_CODE]-[MMDD]-[RAW_ID]`
   - Calendar events: `CAL-[SCHOOL_ACRONYM]-[MMDD]-[ROW_ID]`
   - GCS Mobile Incidents: `INC-[MMDD]-[INCIDENT_ID]`
+  - **Explicit Source Entity Tagging (`source_type`)**: Contains an explicit `source_type` (`'lgu'`, `'academic'`, `'weather'`, `'ops'`) decoupled from literature friction domain parameters ($A_{sw}$ vs $L_{sp}$). Notices declared by Local Government Units (e.g. Quezon City, Manila PIO, San Juan, Pasig, Marikina, Antipolo, Cainta) remain tagged as `source_type = 'lgu'` even when declaring class suspensions (which affect student volume $A_{sw}$).
+  - **Deterministic Origin Propagation**: The sync trigger `external.sync_academic_lgu_to_events_consolidated()` dynamically evaluates the posting authority origin via `category = 'lgu'` and `id LIKE 'external_lgu_%'` to store `v_source_type` reliably.
+  - **Descriptive Event Feed Resolution**: `"Analytics".descriptive_live_event_feed` projects `source_type` directly, supplemented by resilient exclusion regex (`AND NOT ec.source_name ~* '(university|college|school|council|student|varsitarian)'`) to prevent school pages containing city names (e.g., *St. Paul University Quezon City*) from false-positive LGU tagging.
   - Auto-normalizes class suspension and online modality shift events to binary score `1.0`.
   - Automatically propagates `source_url` (Facebook announcement permalink) and `description` (raw post text) into consolidated records.
   - Non-disruptive LGU weather monitoring, rainfall advisories, river maintenance, estero clean-up operations, and road flood updates are classified as `LGU Weather / Flooding Advisory` or `LGU Municipal Clearing & Maintenance` (`affects_ridership = FALSE`), preventing false-positive capacity dampeners or erroneous `"Holiday"` / `"University Milestone / Surge"` tags.

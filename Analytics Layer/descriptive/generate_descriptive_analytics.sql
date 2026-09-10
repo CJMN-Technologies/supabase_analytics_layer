@@ -300,31 +300,48 @@ SELECT weather_current.id AS trigger_id,
    FROM external.weather_current
   WHERE ((weather_current.observed_at AT TIME ZONE 'Asia/Manila'::text))::date = ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'::text))::date
 
-UNION ALL
-
- SELECT min(ec.id) AS trigger_id,
-        CASE
-            WHEN (ec.event_category = 'lgu'::text OR ec.friction_domain = 'lgu'::text) THEN 'lgu'::text
-            ELSE 'academic'::text
-        END AS source_type,
-    string_agg(DISTINCT ec.source_name, ' / '::text) AS source,
-    (('Station: '::text || string_agg(DISTINCT ec.station, ', '::text)) || ' - '::text || COALESCE(ec.event_name, 'Event Notice'::text)) AS message,
-    max(COALESCE(ec.announcement_time, ec.updated_at)) AS "time",
-        CASE
-            -- Tier 1 (CRITICAL, Red): Normalized Score >= 0.80 or explicit physical disruptions
-            WHEN ((lower(COALESCE(ec.event_name, ''::text)) ~* '(suspension|walang pasok|red alert|tigil pasada|strike|monsoon|typhoon)') 
-                  OR (max(ec.normalized_score) >= 0.80)) THEN 'critical'::text
-            -- Tier 2 (WARNING, Amber): Normalized Score between 0.45 and 0.79 or large crowd surges
-            WHEN ((max(ec.normalized_score) >= 0.45) 
-                  OR (lower(COALESCE(ec.event_name, ''::text)) ~* '(arena|concert|heavy rain|flood|commencement|graduation|rally)')) THEN 'warning'::text
-            -- Tier 3 (INFORMATIONAL, Sky-Blue): Routine calendar milestones, exams, orientations, registrations
-            ELSE 'low'::text
-        END AS urgency,
-    string_agg(DISTINCT ec.station, ', '::text) AS station_name,
-    max(ec.source_url) AS source_url,
-    max(ec.description) AS description
-   FROM external.events_consolidated ec
-  WHERE ec.event_date = ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'::text))::date
-  GROUP BY ec.event_date, ec.event_category, ec.friction_domain, ec.event_name;
+ UNION ALL
+ 
+  SELECT min(ec.id) AS trigger_id,
+         CASE
+             WHEN ec.source_type = 'lgu'
+                  OR ec.source_id LIKE 'external_lgu_%'
+                  OR (ec.source_name ~* '(government|public information office|\bpio\b|municipality|mmda)'
+                      AND NOT ec.source_name ~* '(university|college|school|council|student|varsitarian)') THEN 'lgu'::text
+             WHEN ec.source_type = 'mobile-app'
+                  OR ec.source_table = 'incidents'
+                  OR ec.source_name = 'Ground Control System' THEN 'mobile-app'
+             ELSE 'academic'::text
+         END AS source_type,
+     string_agg(DISTINCT ec.source_name, ' / '::text) AS source,
+     (('Station: '::text || string_agg(DISTINCT ec.station, ', '::text)) || ' - '::text || COALESCE(ec.event_name, 'Event Notice'::text)) AS message,
+     max(COALESCE(ec.announcement_time, ec.updated_at)) AS "time",
+         CASE
+             -- Tier 1 (CRITICAL, Red): Normalized Score >= 0.80 or explicit physical disruptions
+             WHEN ((lower(COALESCE(ec.event_name, ''::text)) ~* '(suspension|walang pasok|red alert|tigil pasada|strike|monsoon|typhoon)') 
+                   OR (max(ec.normalized_score) >= 0.80)) THEN 'critical'::text
+             -- Tier 2 (WARNING, Amber): Normalized Score between 0.45 and 0.79 or large crowd surges
+             WHEN ((max(ec.normalized_score) >= 0.45) 
+                   OR (lower(COALESCE(ec.event_name, ''::text)) ~* '(arena|concert|heavy rain|flood|commencement|graduation|rally)')) THEN 'warning'::text
+             -- Tier 3 (INFORMATIONAL, Sky-Blue): Routine calendar milestones, exams, orientations, registrations
+             ELSE 'low'::text
+         END AS urgency,
+     string_agg(DISTINCT ec.station, ', '::text) AS station_name,
+     max(ec.source_url) AS source_url,
+     max(ec.description) AS description
+    FROM external.events_consolidated ec
+   WHERE ec.event_date = ((CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Manila'::text))::date
+   GROUP BY ec.event_date, 
+            CASE
+                WHEN ec.source_type = 'lgu'
+                     OR ec.source_id LIKE 'external_lgu_%'
+                     OR (ec.source_name ~* '(government|public information office|\bpio\b|municipality|mmda)'
+                         AND NOT ec.source_name ~* '(university|college|school|council|student|varsitarian)') THEN 'lgu'::text
+                WHEN ec.source_type = 'mobile-app'
+                     OR ec.source_table = 'incidents'
+                     OR ec.source_name = 'Ground Control System' THEN 'mobile-app'
+                ELSE 'academic'::text
+            END,
+            ec.event_name;
 
 GRANT SELECT ON "Analytics".descriptive_live_event_feed TO anon, authenticated, service_role;
