@@ -100,3 +100,19 @@ $$V_p = \text{ROUND}\left( B_{m, \text{seasonal}} \times (1 + \beta_{\text{acad}
 
 6. **Transportation Research Board (TRB) (2023)**. *Transit Capacity and Quality of Service Manual (TCQSM): Guidelines for Urban Rail Station Platform Level-of-Service*. TCRP Report 165 Supplement, National Academies of Sciences, Engineering, and Medicine.  
    - **URL / PDF**: https://onlinepubs.trb.org/onlinepubs/tcrp/tcrp_rpt_165.pdf
+
+7. **American Public Transportation Association (APTA) (2021)**. *Operating Practices for Transit Crowd and Capacity Management* (APTA RT-OP-S-002-09). APTA Standards Development Program.  
+   - **URL / Standard**: https://www.apta.com/standards/
+
+8. **Department of Transportation (DOTr) & Light Rail Transit Authority (LRTA) (2022)**. *LRT Line 2 Annual Passenger Volume, Time-of-Day Distribution, and Operational Statistics Report*. Planning and Operations Division, DOTr-LRTA.  
+   - **URL**: https://lrta.gov.ph/
+
+9. **Fruin, J. J. (1971)**. *Pedestrian Planning and Design*. Metropolitan Association of Urban Designers and Environmental Planners (MAUDEP).  
+   - **Theoretical Foundation**: Establishes Level of Service (LOS) crowd density standards ($0.75\text{–}1.08 \text{ m}^2/\text{p}$ for LOS D Warning $P_{80}$, and $<0.75 \text{ m}^2/\text{p}$ for LOS E/F Critical $P_{90}$) operationalized in `"Station Capacity".station_platform_capacity`.
+
+10. **Japan International Cooperation Agency (JICA) & National Economic and Development Authority (NEDA) (2020)**. *Follow-Up Study on the Roadmap for Transport Infrastructure Development for Greater Capital Region (GCR)*. JICA/NEDA Project Report.  
+    - **URL / PDF**: https://openjicareport.jica.go.jp/
+
+11. **Light Rail Transit Authority (LRTA) Project Management Office (2019)**. *LRT Line 2 System Capacity, Station Platform Dimensions, and Rolling Stock Design Limits Specification*. LRTA Engineering and Operations Division.  
+    - **Physical Baseline**: Establishes platform constants ($K_p$) across all 13 stations determining Platform Capacity Utilization ($U_p$).
+

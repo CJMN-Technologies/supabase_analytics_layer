@@ -335,7 +335,20 @@ BEGIN
         RETURN;
     END IF;
 
-    -- Filter 5c: Dynamic Class / Work Suspensions (Emergency, Weather, Heat Index)
+    -- Filter 5c: Rescheduled / Postponed Arena & Sports Events
+    -- Evaluated BEFORE general class suspensions so that secondary causes (e.g. "rescheduled due to class suspension") do not hijack the event!
+    IF v_combined ~* '(uaap|ncaa|concert|sports\s+event|arena\s+event|basketball|volleyball|cheerdance|pep\s+squad|send[- ]?off|pep\s+rally|game\s+day|paskuhan|lantern\s+parade|exhibition\s+(game|match)|celebrity\s+match|kick\s*off)'
+       AND v_combined ~* '(reschedul|postpon|move(d|s)\s+to|moved\s+to)' THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Major Arena / Sports Event (Rescheduled)'); 
+        event_category := 'major_event'; 
+        friction_domain := 'academic'; 
+        trigger_category := 'Major Arena Event'; 
+        affects_ridership := TRUE; 
+        RETURN NEXT; 
+        RETURN;
+    END IF;
+
+    -- Filter 5d: Dynamic Class / Work Suspensions (Emergency, Weather, Heat Index)
     IF v_combined ~* '((class(es)?|klase|work|trabaho|office|opisina|school|campus|transaction(s)?|operation(s)?)\s+.*(suspend|suspens|cancelled)|(suspend(ed|ing|sion)?|suspensyon|kanselado|cancel(led|lation)?)\s+.*(class|klase|work|office|school|campus|transaction|operation|onsite)|walang\s*pasok|no\s+class(es)?|in-person\s+class(es)?\s+suspension|cancel(lation|led)?\s+of\s+(medical\s+)?exam)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Class Suspension'); 
         event_category := 'class_suspension'; 
@@ -618,7 +631,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- 2d. Update event sync trigger function to use the new friction_weight lookup
+-- 2d. Update event sync trigger function to handle cancellations, rescheduling, and friction_weight lookup
 CREATE OR REPLACE FUNCTION external.sync_academic_lgu_to_events_consolidated()
 RETURNS trigger AS $$
 DECLARE
@@ -629,38 +642,92 @@ DECLARE
     v_cat_code text;
     v_stations text[];
     v_station text;
+    v_is_reschedule boolean := FALSE;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         DELETE FROM external.events_consolidated WHERE source_id = OLD.id AND source_table = 'academic_lgu_events';
         RETURN OLD;
     END IF;
 
-    IF NEW.is_cancelled IS TRUE THEN
-        DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
-        RETURN NEW;
+    -- Resolve affected stations
+    v_stations := external.get_affected_stations(NEW.station, NEW.post_text, NEW.image_text, NEW.source_name);
+
+    -- Check if this is a cancellation or rescheduling
+    IF NEW.is_cancellation = TRUE THEN
+        -- 1. Deactivate/delete prior matching events on the station for the announcement date
+        IF NEW.cancellation_target_code = 'MAJOR_ARENA_EVENT' 
+           OR LOWER(COALESCE(NEW.event_name, '')) ~* '(uaap|kickoff|kick\s*off|exhibition|game|match|concert)' THEN
+            DELETE FROM external.events_consolidated
+            WHERE station = ANY(v_stations)
+              AND event_date = NEW.post_date::date
+              AND event_category = 'major_event'
+              AND source_id != NEW.id;
+
+            UPDATE external.academic_lgu_events
+            SET is_cancelled = TRUE,
+                cancellation_reason = 'Cancelled/rescheduled by ' || NEW.id || ' (' || COALESCE(NEW.event_name, '') || ')'
+            WHERE station = ANY(v_stations)
+              AND (event_date::text LIKE (TO_CHAR(NEW.post_date::date, 'YYYY-MM-DD') || '%'))
+              AND (event_code = 'MAJOR_ARENA_EVENT' OR event_name ILIKE '%UAAP%' OR event_name ILIKE '%Party%' OR event_name ILIKE '%Kickoff%')
+              AND id != NEW.id;
+        END IF;
+
+        -- Check if it was rescheduled to a new date
+        IF NEW.event_date IS NOT NULL AND NEW.event_date ~ '^\d{4}-\d{2}-\d{2}$' THEN
+            v_event_date := NEW.event_date::date;
+            IF v_event_date > NEW.post_date::date THEN
+                v_is_reschedule := TRUE;
+            END IF;
+        END IF;
+
+        -- If it is a pure cancellation without a new date, do not insert any active disruption!
+        IF NOT v_is_reschedule THEN
+            DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
+            RETURN NEW;
+        END IF;
     END IF;
- 
-    SELECT * INTO v_result
-    FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category, NEW.event_name);
- 
+
+    -- Classify event using robust SELECT ... INTO
+    IF NEW.event_code = 'MAJOR_ARENA_EVENT' THEN
+        SELECT 
+            COALESCE(NULLIF(TRIM(NEW.event_name), ''), 'Major Arena / Sports Event')::text AS event_name,
+            'major_event'::text AS event_category,
+            'academic'::text AS friction_domain,
+            'Major Arena Event'::text AS trigger_category,
+            TRUE::boolean AS affects_ridership
+        INTO v_result;
+    ELSE
+        SELECT * INTO v_result
+        FROM external.classify_event_from_text(NEW.post_text, NEW.image_text, NEW.category, NEW.event_name);
+    END IF;
+
     IF v_result.affects_ridership = FALSE OR v_result.affects_ridership IS NULL THEN
         DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
         RETURN NEW;
     END IF;
- 
+
     -- Look up the literature friction weight (SCD Type 1 lookup)
     SELECT fw.friction_weight INTO v_weight
     FROM external.friction_weight fw
     WHERE fw.friction_domain = v_result.friction_domain 
       AND fw.trigger_category = v_result.trigger_category
     LIMIT 1;
-    v_weight := COALESCE(v_weight, 0.0);
- 
-    v_event_date := external.extract_event_date_from_text(NEW.post_text, NEW.image_text, NEW.post_date);
- 
+    v_weight := COALESCE(v_weight, 0.65);
+
+    -- Determine event date: prioritize parsed NEW.event_date if valid
+    IF v_event_date IS NULL THEN
+        IF NEW.event_date IS NOT NULL AND NEW.event_date ~ '^\d{4}-\d{2}-\d{2}$' THEN
+            v_event_date := NEW.event_date::date;
+        ELSE
+            v_event_date := external.extract_event_date_from_text(NEW.post_text, NEW.image_text, NEW.post_date);
+        END IF;
+    END IF;
+
     -- Format a cleaner, shorter scrape ID prefix
     v_cat_code := CASE v_result.event_category
         WHEN 'class_suspension' THEN 'CS'
+        WHEN 'holiday' THEN 'HD'
+        WHEN 'school_break' THEN 'SB'
         WHEN 'transport_strike' THEN 'TS'
         WHEN 'major_event' THEN 'ME'
         WHEN 'exam_week' THEN 'EX'
@@ -670,10 +737,7 @@ BEGIN
     -- Clear any existing rows for this source_id first to prevent duplicate or stale station assignments on update
     DELETE FROM external.events_consolidated WHERE source_id = NEW.id AND source_table = 'academic_lgu_events';
 
-    -- Resolve the list of stations affected by this event
-    v_stations := external.get_affected_stations(NEW.station, NEW.post_text, NEW.image_text, NEW.source_name);
-
-    -- Loop and insert for each affected station
+    -- Loop and insert for each affected station on the target event_date
     FOREACH v_station IN ARRAY v_stations LOOP
         v_scrape_id := 'SCR-' || v_cat_code || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || NEW.id || '-' || REPLACE(LOWER(v_station), ' ', '_');
 
@@ -723,7 +787,7 @@ BEGIN
             announcement_time = EXCLUDED.announcement_time,
             updated_at = now();
     END LOOP;
- 
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

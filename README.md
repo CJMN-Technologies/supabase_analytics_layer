@@ -225,6 +225,11 @@ Every trigger weight in `external.friction_weight` is directly backed by publish
 
 ### 🛡️ Explicit Scraped Event Cancellation & Classification Rules
 - **Explicit Cancellation Rule:** An event in `external.academic_lgu_events` will **ONLY** be marked as cancelled (`is_cancelled = TRUE`) and removed from `external.events_consolidated` if there is an **actual scraped post in the database stating that it is cancelled** (`is_cancelled = TRUE` or `is_cancellation = TRUE`). In the absence of an explicit scraped cancellation post, events (such as 3-day transport strikes or multi-day advisories) **remain 100% active** (`is_cancelled = FALSE`).
+- **Rescheduled & Postponed Event Filter Precedence (Filter 5c / 6c):** Rescheduled sports, arena, and concert events (e.g. UAAP kickoff rallies, exhibition games) are evaluated *prior* to general class suspension regex in `external.classify_event_from_text()`. This prevents incidental suspension clauses (e.g., *"rescheduled following suspension of classes"*) from hijacking the event classification into false Critical (`1.0`) class suspensions on the announcement date.
+- **Rescheduling & Target Date Reconciliation (`external.sync_academic_lgu_to_events_consolidated`):**
+  - Honors `NEW.event_code = 'MAJOR_ARENA_EVENT'` and parsed `NEW.event_date` from the scraper.
+  - When `is_cancellation = TRUE` with `cancellation_target_code = 'MAJOR_ARENA_EVENT'` (or matching arena/sports keywords), prior matching events on the announcement date are marked `is_cancelled = TRUE` and purged from `events_consolidated`.
+  - If rescheduled to a future date (`event_date > post_date`), the trigger registers the rescheduled event on the target date as `major_event` (`Major Arena Event`, weight `0.65`). Pure cancellations without a new target date are pruned without inserting false disruptions.
 - **Resilient Regex Classification:** `external.classify_event_from_text` employs generalized regular expressions to eliminate verb-tense locks (`is|are`), support hashtag variations (`#WalangPasok` via `walang\s*pasok`), accommodate general suspension phrasing (`class(es)?\s+.*suspend`, `work\s+.*suspend`), and capture online synchronous/asynchronous shifts.
 
 *Full academic attributions, dataset typologies, and formulas are documented in [ACADEMIC_REFERENCES.md](file:///c:/Users/Jed/LRT/Analytics/ACADEMIC_REFERENCES.md).*
