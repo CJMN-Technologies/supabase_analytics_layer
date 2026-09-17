@@ -718,6 +718,15 @@ DECLARE
 BEGIN
     v_lower := LOWER(COALESCE(p_event_name, ''));
 
+    -- Satellite Campus Local Holidays (e.g. Makati Day, Taguig Day, Caloocan Day, Cavite Day, Bulacan Day for satellite campuses outside LRT-2 corridor)
+    IF v_lower ~* '(makati\s+day|taguig\s+day|caloocan\s+day|pasay\s+day|muntinlupa\s+day|las\s+piñas\s+day|parañaque\s+day|malabon\s+day|navotas\s+day|valenzuela\s+day|cavite\s+day|laguna\s+day|bulacan\s+day|pampanga\s+day|batangas\s+day|rizal\s+day\s*\(makati\))' THEN
+        event_category := 'satellite_holiday';
+        friction_domain := NULL;
+        trigger_category := NULL;
+        affects_ridership := FALSE;
+        RETURN NEXT; RETURN;
+    END IF;
+
     -- Promotions Board / Grade posting / Dropping of subjects / Leave filing (internal, no ridership impact)
     IF v_lower ~* '(promotions?\s+board|posting\s+of.*(grade|result)|deliberation|grade\s+release|final\s+grade|drop(ping)?\s+of\s+subject|leave\s+of\s+absence|filing)' THEN
         event_category := 'administrative';
