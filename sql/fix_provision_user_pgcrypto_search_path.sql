@@ -25,7 +25,7 @@ DECLARE
   new_auth_id uuid;
   new_iam_id text;
 BEGIN
-  -- Insert into auth.users with pre-confirmed email
+  -- Insert into auth.users with NULL email_confirmed_at so confirmation email is sent
   INSERT INTO auth.users (
     instance_id,
     id,
@@ -51,7 +51,7 @@ BEGIN
     'authenticated',
     p_email,
     extensions.crypt(p_password, extensions.gen_salt('bf')),
-    now(),
+    NULL,
     now(),
     now(),
     '{"provider":"email","providers":["email"]}',
