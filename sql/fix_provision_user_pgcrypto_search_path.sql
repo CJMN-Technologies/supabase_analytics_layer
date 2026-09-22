@@ -120,5 +120,5 @@ EXCEPTION
 END;
 $function$;
 
-GRANT EXECUTE ON FUNCTION public.provision_user(text, text, text, text, text, text, text, text, text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.provision_user(text, text, text, text, text, text, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.provision_user(text, text, text, text, text, text, text, text, text) TO anon, authenticated, service_role, public;
+GRANT EXECUTE ON FUNCTION public.delete_user_account(text) TO anon, authenticated, service_role, public;
