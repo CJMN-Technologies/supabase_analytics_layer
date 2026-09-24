@@ -27,6 +27,13 @@ Scraper/
 Analytics/
 runs.json
 scratch/
+[Aa]cademic [Pp]aper/
+[Aa]cademic-[Pp]aper/
+academic_paper/
+*manuscript*
+*Manuscript*
+*.docx
+
 
 # Python cache
 __pycache__/
