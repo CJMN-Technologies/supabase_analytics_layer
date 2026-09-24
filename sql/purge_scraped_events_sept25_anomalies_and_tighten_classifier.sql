@@ -1,97 +1,162 @@
 -- ============================================================================
--- Migration: Events Classification, Consolidation & Normalization Pipeline
--- Implements EventsNormalizationToFrictionIndex.md with CFI_Variables.md labels
--- Classification: External Dataset (Events Scraper/API)
+-- PURGE SCRAPED EVENT ANOMALIES & HARDEN CLASSIFIER GUARDRAILS (SEPT 25, 2026)
+-- Target Supabase Project: kthioobzfyepokrrykem
+-- Execution Date: 2026-09-25
+--
+-- Anomalies Addressed:
+-- 1. external_acad_0276: San Beda Student Council CAS Study Fuel snacks & busking
+--    in Montserrat Bldg GF & Student Activity Room (28 spurious shocks across 7 days).
+-- 2. external_lgu_0300: Quezon City 31st Barangay Day awards celebration in Novotel
+--    Manila Araneta City hotel ballroom (5 spurious arena shocks).
+-- 3. external_acad_0283: UP Diliman GAEA general assembly in classroom SUB 411
+--    misclassified as Major Arena Event due to poster political slogan (5 spurious arena shocks).
+-- 4. external_acad_0280: T.I.P. Midterm Examinations motivational social media cheer post
+--    duplicating active institutional calendar CAL-TIP-0922-* (5 duplicate shocks).
+-- 5. external_acad_0279: The Varsitarian retrospective photo album published late evening
+--    duplicating active Sept 21 Mendiola rally records 0277 & 0299 (4 duplicate shocks).
+-- 6. Classification Inversion: external_lgu_0299 reclassified from MAJOR_ARENA_EVENT to CIVIC_RALLY.
+-- 7. Geographic Scope Discrepancy: external_acad_0281 (ASEAN Summit NCR-wide holiday) expanded
+--    corridor-wide to all 13 LRT-2 stations.
 -- ============================================================================
 
--- 1a. Create the consolidated events table
-CREATE TABLE IF NOT EXISTS external.events_consolidated (
-    id text PRIMARY KEY,
-    station text NOT NULL,
-    event_date date NOT NULL,
-    source_table text NOT NULL,
-    source_id text NOT NULL,
-    source_name text,
-    event_name text NOT NULL,
-    event_category text NOT NULL,
-    friction_domain text NOT NULL,
-    trigger_category text NOT NULL,
-    source_url text,
-    description text,
-    -- Normalized score: A_sw (Academic Surge Weight) or L_sp (Surge Probability Multiplier)
-    normalized_score numeric NOT NULL DEFAULT 0.0,
-    -- Raw literature weight from friction_weight for traceability
-    friction_weight_ref numeric NOT NULL DEFAULT 0.0,
-    announcement_time timestamp with time zone NULL,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+BEGIN;
+
+-- Step 1: Purge 47 spurious & duplicate shocks from external.events_consolidated
+DELETE FROM external.events_consolidated
+WHERE source_id IN (
+    'external_acad_0276',
+    'external_lgu_0300',
+    'external_acad_0283',
+    'external_acad_0280',
+    'external_acad_0279'
 );
 
-ALTER TABLE external.events_consolidated ADD COLUMN IF NOT EXISTS announcement_time timestamp with time zone NULL;
+-- Step 2: Mark source records in external.academic_lgu_events as cancelled with explicit audit reasons
+UPDATE external.academic_lgu_events
+SET is_cancelled = TRUE,
+    cancellation_reason = 'SPURIOUS_ANOMALY: Internal student council snack lounge/musical busking in CAS Montserrat Bldg GF / Student Activity Room, not an institutional exam schedule.'
+WHERE id = 'external_acad_0276';
 
-CREATE INDEX IF NOT EXISTS idx_events_consolidated_lookup
-ON external.events_consolidated (station, event_date, event_category);
+UPDATE external.academic_lgu_events
+SET is_cancelled = TRUE,
+    cancellation_reason = 'SPURIOUS_ANOMALY: 31st QC Barangay Day awards recognition ceremony held in Novotel Manila Araneta City private hotel ballroom; misclassified as major arena event.'
+WHERE id = 'external_lgu_0300';
 
--- 1ad. Station Name Normalization Function to match unpivoted ridership conventions
-CREATE OR REPLACE FUNCTION external.normalize_station_name(p_station text)
-RETURNS text AS $$
-DECLARE
-    v_clean text;
-BEGIN
-    v_clean := UPPER(TRIM(COALESCE(p_station, 'All Stations')));
-    
-    IF v_clean IN ('ALL', 'ALL STATIONS', 'ALL STATION', '') THEN
-        RETURN 'All Stations';
-    ELSIF v_clean IN ('RECTO') THEN
-        RETURN 'Recto';
-    ELSIF v_clean IN ('LEGARDA') THEN
-        RETURN 'Legarda';
-    ELSIF v_clean IN ('PUREZA') THEN
-        RETURN 'Pureza';
-    ELSIF v_clean IN ('V. MAPA', 'VMAPA', 'V MAPA') THEN
-        RETURN 'V. Mapa';
-    ELSIF v_clean IN ('J. RUIZ', 'JRUIZ', 'J RUIZ') THEN
-        RETURN 'J. Ruiz';
-    ELSIF v_clean IN ('GILMORE') THEN
-        RETURN 'Gilmore';
-    ELSIF v_clean IN ('BETTY GO-BELMONTE', 'BETTY GO BELMONTE', 'BETTY GO') THEN
-        RETURN 'Betty Go-Belmonte';
-    ELSIF v_clean IN ('ARANETA CENTER-CUBAO', 'ARANETA CENTER CUBAO', 'ARANETA', 'CUBAO') THEN
-        RETURN 'Araneta Center Cubao';
-    ELSIF v_clean IN ('ANONAS') THEN
-        RETURN 'Anonas';
-    ELSIF v_clean IN ('KATIPUNAN') THEN
-        RETURN 'Katipunan';
-    ELSIF v_clean IN ('SANTOLAN') THEN
-        RETURN 'Santolan';
-    ELSIF v_clean IN ('MARIKINA-PASIG', 'MARIKINA PASIG', 'MARIKINA') THEN
-        RETURN 'Marikina-Pasig';
-    ELSIF v_clean IN ('ANTIPOLO') THEN
-        RETURN 'Antipolo';
-    ELSE
-        RETURN INITCAP(p_station);
-    END IF;
-END;
-$$ LANGUAGE plpgsql 
-SET search_path = public, pg_temp
-IMMUTABLE;
+UPDATE external.academic_lgu_events
+SET is_cancelled = TRUE,
+    cancellation_reason = 'SPURIOUS_ANOMALY: Student environmental organization general assembly and committee sign-up in classroom SUB 411; promotional poster contained political slogan misclassified as major arena event.'
+WHERE id = 'external_acad_0283';
 
--- -- 1b. Function to classify scraped text into event_category, friction_domain, and trigger_category
-CREATE OR REPLACE FUNCTION external.classify_event_from_text(
+UPDATE external.academic_lgu_events
+SET is_cancelled = TRUE,
+    cancellation_reason = 'DUPLICATE_CALENDAR: Motivational social media exam cheer duplicating institutional academic calendar record CAL-TIP-0922-*.'
+WHERE id = 'external_acad_0280';
+
+UPDATE external.academic_lgu_events
+SET is_cancelled = TRUE,
+    cancellation_reason = 'DUPLICATE_RETROSPECTIVE: Retrospective photo album recap published after Sept 21 Mendiola rally concluded; duplicates active mobilization records external_acad_0277 and external_lgu_0299.'
+WHERE id = 'external_acad_0279';
+
+-- Step 3: Harden external.get_affected_stations()
+CREATE OR REPLACE FUNCTION external.get_affected_stations(
+    p_station text,
     p_post_text text,
     p_image_text text,
-    p_category text,
-    p_event_name text DEFAULT NULL
-) RETURNS TABLE (
-    event_name text,
-    event_category text,
-    friction_domain text,
-    trigger_category text,
-    affects_ridership boolean
-) 
-LANGUAGE plpgsql 
-SET search_path = public, pg_temp
-IMMUTABLE
-AS $$
+    p_source_name text
+) RETURNS text[] AS $$
+DECLARE
+    v_combined text;
+    v_stations text[] := ARRAY[]::text[];
+    v_station_normalized text;
+    v_city text := NULL;
+    v_all_stations text[] := ARRAY[
+        'Recto', 'Legarda', 'Pureza', 'V. Mapa', 'J. Ruiz', 'Gilmore',
+        'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan',
+        'Santolan', 'Marikina-Pasig', 'Antipolo'
+    ];
+BEGIN
+    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_source_name, ''));
+    v_station_normalized := external.normalize_station_name(p_station);
+
+    -- 1. Check for corridor-wide / NCR-wide / Presidential / Malacañang declarations first
+    IF (v_combined ~* '\b(metro\s+manila|ncr\s+wide|all\s+public\s+and\s+private|across\s+metro\s+manila|nationwide|malacañang|malacanang|asean\s+summit)\b'
+        AND NOT v_combined ~* '\b(quezon\s+city\s+only|manila\s+only|san\s+juan\s+only)\b')
+       OR v_station_normalized = 'All Stations' THEN
+        RETURN v_all_stations;
+    END IF;
+
+    -- 2. Check for specific local city holiday keywords to prevent city-specific holidays from expanding
+    IF v_combined ~* '\b(manila\s+day|araw\s+ng\s+maynila|founding\s+anniversary\s+of\s+manila)\b' THEN
+        v_city := 'Manila';
+    ELSIF v_combined ~* '\b(quezon\s+city\s+day|araw\s+ng\s+quezon|qc\s+day)\b' THEN
+        v_city := 'Quezon City';
+    ELSIF v_combined ~* '\b(san\s+juan\s+day|araw\s+ng\s+san\s+juan|wattah\s+wattah)\b' THEN
+        v_city := 'San Juan';
+    ELSIF v_combined ~* '\b(marikina\s+day|araw\s+ng\s+marikina)\b' THEN
+        v_city := 'Pasig and Marikina';
+    ELSIF v_combined ~* '\b(pasig\s+day|araw\s+ng\s+pasig)\b' THEN
+        v_city := 'Pasig and Marikina';
+    ELSIF v_combined ~* '\b(antipolo\s+day|araw\s+ng\s+antipolo)\b' THEN
+        v_city := 'Antipolo';
+    END IF;
+
+    -- 3. Map source station to city group if present
+    IF v_city IS NULL AND v_station_normalized IS NOT NULL AND v_station_normalized != '' THEN
+        IF v_station_normalized IN ('Recto', 'Legarda', 'Pureza', 'V. Mapa') THEN
+            v_city := 'Manila';
+        ELSIF v_station_normalized IN ('J. Ruiz') THEN
+            v_city := 'San Juan';
+        ELSIF v_station_normalized IN ('Gilmore', 'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan') THEN
+            v_city := 'Quezon City';
+        ELSIF v_station_normalized IN ('Santolan', 'Marikina-Pasig') THEN
+            v_city := 'Pasig and Marikina';
+        ELSIF v_station_normalized IN ('Antipolo') THEN
+            v_city := 'Antipolo';
+        END IF;
+    END IF;
+
+    -- 4. Check for place/city keywords in the combined text
+    IF v_city = 'Manila' OR v_combined ~* '\b(manila|recto|legarda|pureza|v\.?\s*mapa)\b' THEN
+        v_stations := v_stations || ARRAY['Recto', 'Legarda', 'Pureza', 'V. Mapa'];
+    END IF;
+
+    IF v_city = 'San Juan' OR v_combined ~* '\b(san\s+juan|j\.?\s*ruiz)\b' THEN
+        v_stations := v_stations || ARRAY['J. Ruiz'];
+    END IF;
+
+    IF v_city = 'Quezon City' OR v_combined ~* '\b(quezon\s+city|qc|gilmore|betty\s+go|araneta|cubao|anonas|katipunan)\b' THEN
+        v_stations := v_stations || ARRAY['Gilmore', 'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan'];
+    END IF;
+
+    IF v_city = 'Pasig and Marikina' OR v_combined ~* '\b(pasig|marikina|santolan)\b' THEN
+        v_stations := v_stations || ARRAY['Santolan', 'Marikina-Pasig'];
+    END IF;
+
+    IF v_city = 'Antipolo' OR v_combined ~* '\b(antipolo|rizal)\b' THEN
+        v_stations := v_stations || ARRAY['Antipolo'];
+    END IF;
+
+    -- 5. Deduplicate the stations array
+    IF array_length(v_stations, 1) > 0 THEN
+        SELECT ARRAY(SELECT DISTINCT unnest(v_stations)) INTO v_stations;
+    ELSE
+        IF v_station_normalized IS NOT NULL AND v_station_normalized != '' AND v_station_normalized != 'All Stations' THEN
+            v_stations := ARRAY[v_station_normalized];
+        ELSE
+            v_stations := v_all_stations;
+        END IF;
+    END IF;
+
+    RETURN v_stations;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- Step 4: Harden external.classify_event_from_text()
+CREATE OR REPLACE FUNCTION external.classify_event_from_text(p_post_text text, p_image_text text, p_category text, p_event_name text DEFAULT NULL::text)
+ RETURNS TABLE(event_name text, event_category text, friction_domain text, trigger_category text, affects_ridership boolean)
+ LANGUAGE plpgsql
+ IMMUTABLE
+AS $function$
 DECLARE
     v_combined text;
 BEGIN
@@ -216,7 +281,7 @@ BEGIN
 
     -- Filter 6: LGU Weather / Flood / Incident Management Monitoring
     IF (v_combined ~* '(weather\s+update|heavy\s+rainfall|rainfall\s+warning|habagat|southwest\s+monsoon|monsoon|water\s+level|river\s+level|alert\s+level|incident\s+management\s+team|demobiliz|wild\s+diseases)'
-        AND NOT v_combined ~* '(suspend|walang\s*pasok|no\s+class|shift\s+to\_online|strike|tigil\s+pasada)') THEN
+        AND NOT v_combined ~* '(suspend|walang\s*pasok|no\s+class|shift\s+to\s+online|strike|tigil\s+pasada)') THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'LGU Weather Advisory'); 
         event_category := 'weather_advisory'; 
         friction_domain := 'lgu'; 
@@ -288,208 +353,15 @@ BEGIN
     -- Default fallback
     event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Regular Academic Schedule');
     event_category := 'regular_class_day';
-    friction_domain := 'academic'; 
+    friction_domain := 'academic';
     trigger_category := 'Regular Class Day';
     affects_ridership := FALSE; 
     RETURN NEXT; 
     RETURN;
 END;
-$$ LANGUAGE plpgsql IMMUTABLE;
+$function$;
 
--- 1b_2. Extract event date from post/image text with timezone safety and relative offset support
-CREATE OR REPLACE FUNCTION external.extract_event_date_from_text(
-    p_post_text text,
-    p_image_text text,
-    p_post_date timestamp with time zone
-) RETURNS date 
-LANGUAGE plpgsql 
-SET search_path = public, pg_temp
-IMMUTABLE
-AS $$
-DECLARE
-    v_combined text;
-    v_f1_match text[];
-    v_f2_match text[];
-    v_f1_pos integer := 0;
-    v_f2_pos integer := 0;
-    v_use_f2 boolean := false;
-    v_month text;
-    v_day integer;
-    v_year integer;
-    v_month_num integer;
-    v_fallback date;
-BEGIN
-    -- Fallback is the post_date in Asia/Manila timezone
-    v_fallback := (p_post_date AT TIME ZONE 'Asia/Manila')::date;
-    
-    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, ''));
-    
-    -- Format 1: Month Name followed by Day (e.g., July 2, 2026 or July 2)
-    -- Using \y for word boundaries to prevent matching digits inside years (like matching '20' in '2026' as July 20)
-    v_f1_match := regexp_match(
-        v_combined,
-        '\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?\s+\y(\d{1,2})\y(?:st|nd|rd|th)?(?:,?\s+\y(\d{4})\y)?'
-    );
-    
-    -- Format 2: Day followed by Month Name (e.g., 02 July 2026 or 18 Aug)
-    v_f2_match := regexp_match(
-        v_combined,
-        '\y(\d{1,2})\y(?:st|nd|rd|th)?\s+\y(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\y\.?(?:\s+\y(\d{4})\y)?'
-    );
-    
-    -- Compare which format appears earliest in the text
-    IF v_f1_match IS NOT NULL AND v_f2_match IS NOT NULL THEN
-        v_f1_pos := POSITION(v_f1_match[1] IN v_combined);
-        v_f2_pos := POSITION(v_f2_match[2] IN v_combined);
-        IF v_f2_pos < v_f1_pos THEN
-            v_use_f2 := true;
-        END IF;
-    ELSIF v_f2_match IS NOT NULL THEN
-        v_use_f2 := true;
-    END IF;
-
-    IF v_use_f2 THEN
-        v_month := v_f2_match[2];
-        v_day := v_f2_match[1]::integer;
-        v_year := v_f2_match[3]::integer;
-    ELSIF v_f1_match IS NOT NULL THEN
-        v_month := v_f1_match[1];
-        v_day := v_f1_match[2]::integer;
-        v_year := v_f1_match[3]::integer;
-    END IF;
-
-    IF v_month IS NOT NULL THEN
-        v_month_num := CASE
-            WHEN v_month IN ('january', 'jan') THEN 1
-            WHEN v_month IN ('february', 'feb') THEN 2
-            WHEN v_month IN ('march', 'mar') THEN 3
-            WHEN v_month IN ('april', 'apr') THEN 4
-            WHEN v_month IN ('may') THEN 5
-            WHEN v_month IN ('june', 'jun') THEN 6
-            WHEN v_month IN ('july', 'jul') THEN 7
-            WHEN v_month IN ('august', 'aug') THEN 8
-            WHEN v_month IN ('september', 'sep') THEN 9
-            WHEN v_month IN ('october', 'oct') THEN 10
-            WHEN v_month IN ('november', 'nov') THEN 11
-            WHEN v_month IN ('december', 'dec') THEN 12
-        END;
-        
-        -- If year is missing or in the past (stale extraction), default to post creation year (2026)
-        IF v_year IS NULL OR v_year < EXTRACT(YEAR FROM v_fallback)::integer THEN
-            v_year := EXTRACT(YEAR FROM v_fallback)::integer;
-        END IF;
-
-        BEGIN
-            RETURN make_date(v_year, v_month_num, v_day);
-        EXCEPTION WHEN OTHERS THEN
-            RETURN v_fallback;
-        END;
-    END IF;
-
-    -- Handle relative tomorrow keywords
-    IF v_combined ~* '\y(tomorrow|bukas)\y' THEN
-        RETURN v_fallback + 1;
-    END IF;
-
-    RETURN v_fallback;
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
-
--- 1b_3. Resolve affected stations by city/place keywords and source locations
-CREATE OR REPLACE FUNCTION external.get_affected_stations(
-    p_station text,
-    p_post_text text,
-    p_image_text text,
-    p_source_name text
-) RETURNS text[] AS $$
-DECLARE
-    v_combined text;
-    v_stations text[] := ARRAY[]::text[];
-    v_station_normalized text;
-    v_city text := NULL;
-    v_all_stations text[] := ARRAY[
-        'Recto', 'Legarda', 'Pureza', 'V. Mapa', 'J. Ruiz', 'Gilmore',
-        'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan',
-        'Santolan', 'Marikina-Pasig', 'Antipolo'
-    ];
-BEGIN
-    v_combined := LOWER(COALESCE(p_post_text, '') || ' ' || COALESCE(p_image_text, '') || ' ' || COALESCE(p_source_name, ''));
-    v_station_normalized := external.normalize_station_name(p_station);
-
-    -- 1. Check for corridor-wide / NCR-wide / Presidential / Malacañang declarations first
-    IF (v_combined ~* '\b(metro\s+manila|ncr\s+wide|all\s+public\s+and\s+private|across\s+metro\s+manila|nationwide|malacañang|malacanang|asean\s+summit)\b'
-        AND NOT v_combined ~* '\b(quezon\s+city\s+only|manila\s+only|san\s+juan\s+only)\b')
-       OR v_station_normalized = 'All Stations' THEN
-        RETURN v_all_stations;
-    END IF;
-
-    -- 2. Check for specific local city holiday keywords to prevent city-specific holidays from expanding
-    IF v_combined ~* '\b(manila\s+day|araw\s+ng\s+maynila|founding\s+anniversary\s+of\s+manila)\b' THEN
-        v_city := 'Manila';
-    ELSIF v_combined ~* '\b(quezon\s+city\s+day|araw\s+ng\s+quezon|qc\s+day)\b' THEN
-        v_city := 'Quezon City';
-    ELSIF v_combined ~* '\b(san\s+juan\s+day|araw\s+ng\s+san\s+juan|wattah\s+wattah)\b' THEN
-        v_city := 'San Juan';
-    ELSIF v_combined ~* '\b(marikina\s+day|araw\s+ng\s+marikina)\b' THEN
-        v_city := 'Pasig and Marikina';
-    ELSIF v_combined ~* '\b(pasig\s+day|araw\s+ng\s+pasig)\b' THEN
-        v_city := 'Pasig and Marikina';
-    ELSIF v_combined ~* '\b(antipolo\s+day|araw\s+ng\s+antipolo)\b' THEN
-        v_city := 'Antipolo';
-    END IF;
-
-    -- 3. Map source station to city group if present
-    IF v_city IS NULL AND v_station_normalized IS NOT NULL AND v_station_normalized != '' THEN
-        IF v_station_normalized IN ('Recto', 'Legarda', 'Pureza', 'V. Mapa') THEN
-            v_city := 'Manila';
-        ELSIF v_station_normalized IN ('J. Ruiz') THEN
-            v_city := 'San Juan';
-        ELSIF v_station_normalized IN ('Gilmore', 'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan') THEN
-            v_city := 'Quezon City';
-        ELSIF v_station_normalized IN ('Santolan', 'Marikina-Pasig') THEN
-            v_city := 'Pasig and Marikina';
-        ELSIF v_station_normalized IN ('Antipolo') THEN
-            v_city := 'Antipolo';
-        END IF;
-    END IF;
-
-    -- 4. Check for place/city keywords in the combined text
-    IF v_city = 'Manila' OR v_combined ~* '\b(manila|recto|legarda|pureza|v\.?\s*mapa)\b' THEN
-        v_stations := v_stations || ARRAY['Recto', 'Legarda', 'Pureza', 'V. Mapa'];
-    END IF;
-
-    IF v_city = 'San Juan' OR v_combined ~* '\b(san\s+juan|j\.?\s*ruiz)\b' THEN
-        v_stations := v_stations || ARRAY['J. Ruiz'];
-    END IF;
-
-    IF v_city = 'Quezon City' OR v_combined ~* '\b(quezon\s+city|qc|gilmore|betty\s+go|araneta|cubao|anonas|katipunan)\b' THEN
-        v_stations := v_stations || ARRAY['Gilmore', 'Betty Go-Belmonte', 'Araneta Center Cubao', 'Anonas', 'Katipunan'];
-    END IF;
-
-    IF v_city = 'Pasig and Marikina' OR v_combined ~* '\b(pasig|marikina|santolan)\b' THEN
-        v_stations := v_stations || ARRAY['Santolan', 'Marikina-Pasig'];
-    END IF;
-
-    IF v_city = 'Antipolo' OR v_combined ~* '\b(antipolo|rizal)\b' THEN
-        v_stations := v_stations || ARRAY['Antipolo'];
-    END IF;
-
-    -- 5. Deduplicate the stations array
-    IF array_length(v_stations, 1) > 0 THEN
-        SELECT ARRAY(SELECT DISTINCT unnest(v_stations)) INTO v_stations;
-    ELSE
-        IF v_station_normalized IS NOT NULL AND v_station_normalized != '' AND v_station_normalized != 'All Stations' THEN
-            v_stations := ARRAY[v_station_normalized];
-        ELSE
-            v_stations := v_all_stations;
-        END IF;
-    END IF;
-
-    RETURN v_stations;
-END;
-$$ LANGUAGE plpgsql IMMUTABLE;
-
--- 1c. Trigger function for academic_lgu_events → events_consolidated
+-- Step 5: Harden external.sync_academic_lgu_to_events_consolidated()
 CREATE OR REPLACE FUNCTION external.sync_academic_lgu_to_events_consolidated()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -653,7 +525,7 @@ BEGIN
 
     -- Retrospective recaps: photo albums, recaps, post-event coverage
     IF NOT v_is_retrospective THEN
-        IF v_combined_text ~* '(photos? +by|photo +album|in +photos:|event +recap:|protesters +marched +to|playing +it +back|katatapos +lang|after +the +(?:spectacular|opening|ceremony|game|match)|officially +commenced|came +together +for +an +opening|naging +matagumpay|held +(last|on) +(september|august|july|june|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|photo +(highlight|album|recap|documentation)|look +back|event +recap|successfully +held|isang +matagumpay|naganap +noong|nagdaos +ng|naganap +kahapon|naging +makulay|nagtapos +na +ang|natapos +na|victory +over|defeated|won +against|edged +out|loss +to|final +score|campaign +off +to +a +strong +start|thank +you +to +our +partner|couldn''?t +have +done +it +without|partner +companies|sponsors? +and +partners?|one +to +remember|for +helping +make +the|on +(january|february|march|april|may|june|july|august|september|october|november|december) +\d{1,2},? +20\d{2},? +the|idinaos +na|napuno +ng +masasayang +aktibidad)' THEN
+        IF v_combined_text ~* '(photos?\s+by\b|photo\s+album\b|in\s+photos:\b|event\s+recap:\b|protesters\s+marched\s+to\b|playing\s+it\s+back|katatapos\s+lang|after\s+the\s+(?:spectacular|opening|ceremony|game|match)|officially\s+commenced|came\s+together\s+for\s+an\s+opening|naging\s+matagumpay|held\s+(last|on)\s+(september|august|july|june|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|photo\s+(highlight|album|recap|documentation)|look\s+back|event\s+recap|successfully\s+held|isang\s+matagumpay|naganap\s+noong|nagdaos\s+ng|naganap\s+kahapon|naging\s+makulay|nagtapos\s+na\s+ang|natapos\s+na|victory\s+over|defeated|won\s+against|edged\s+out|loss\s+to|final\s+score|campaign\s+off\s+to\s+a\s+strong\s+start|thank\s+you\s+to\s+our\s+partner|couldn''?t\s+have\s+done\s+it\s+without|partner\s+companies|sponsors?\s+and\s+partners?|one\s+to\s+remember|for\s+helping\s+make\s+the|on\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2},?\s+20\d{2},?\s+the|idinaos\s+na|napuno\s+ng\s+masasayang\s+aktibidad)' THEN
             v_is_retrospective := TRUE;
         END IF;
     END IF;
@@ -854,266 +726,22 @@ BEGIN
 END;
 $function$;
 
--- 1d. Attach trigger to academic_lgu_events
-DROP TRIGGER IF EXISTS tg_sync_academic_lgu_events ON external.academic_lgu_events;
-CREATE TRIGGER tg_sync_academic_lgu_events
-AFTER INSERT OR UPDATE OR DELETE ON external.academic_lgu_events
-FOR EACH ROW EXECUTE FUNCTION external.sync_academic_lgu_to_events_consolidated();
+-- Step 6: Reclassify external_lgu_0299 to CIVIC_RALLY
+UPDATE external.academic_lgu_events
+SET event_code = 'CIVIC_RALLY'
+WHERE id = 'external_lgu_0299';
 
+UPDATE external.events_consolidated
+SET trigger_category = 'Civic Rally & Public Mobilization',
+    event_category = 'major_event',
+    friction_weight_ref = 0.75,
+    normalized_score = 0.75
+WHERE source_id = 'external_lgu_0299';
 
--- ============================================================================
--- WORKSTREAM 2: Academic Calendar Ingestion
--- ============================================================================
+-- Step 7: Update external_acad_0281 to corridor-wide scope (triggers hardened sync function)
+UPDATE external.academic_lgu_events
+SET station = 'All Stations',
+    event_code = 'HOLIDAY'
+WHERE id = 'external_acad_0281';
 
--- 2a. Tracking table for processed calendar tables
-CREATE TABLE IF NOT EXISTS external.processed_calendar_tables (
-    table_name text PRIMARY KEY,
-    rows_processed integer DEFAULT 0,
-    last_processed_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
-);
-
--- 2b. Classifier for structured academic calendar event_name
-CREATE OR REPLACE FUNCTION external.classify_calendar_event(
-    p_event_name text
-) RETURNS TABLE (
-    event_category text,
-    friction_domain text,
-    trigger_category text,
-    affects_ridership boolean
-) AS $$
-DECLARE
-    v_lower text;
-BEGIN
-    v_lower := LOWER(COALESCE(p_event_name, ''));
-
-    -- Satellite Campus Local Holidays (e.g. Makati Day, Taguig Day, Caloocan Day, Cavite Day, Bulacan Day for satellite campuses outside LRT-2 corridor)
-    IF v_lower ~* '(makati\s+day|taguig\s+day|caloocan\s+day|pasay\s+day|muntinlupa\s+day|las\s+piñas\s+day|parañaque\s+day|malabon\s+day|navotas\s+day|valenzuela\s+day|cavite\s+day|laguna\s+day|bulacan\s+day|pampanga\s+day|batangas\s+day|rizal\s+day\s*\(makati\))' THEN
-        event_category := 'satellite_holiday';
-        friction_domain := NULL;
-        trigger_category := NULL;
-        affects_ridership := FALSE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Promotions Board / Grade posting / Dropping of subjects / Leave filing (internal, no ridership impact)
-    IF v_lower ~* '(promotions?\s+board|posting\s+of.*(grade|result)|deliberation|grade\s+release|final\s+grade|drop(ping)?\s+of\s+subject|leave\s+of\s+absence|filing)' THEN
-        event_category := 'administrative';
-        friction_domain := NULL;
-        trigger_category := NULL;
-        affects_ridership := FALSE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Exam events
-    IF v_lower ~* '(exam(ination)?|long\s+exam|qualifying|prelim(inary)?|midterm|finals?)' THEN
-        event_category := 'exam_week';
-        friction_domain := 'academic';
-        trigger_category := 'University Exam Week';
-        affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- School Breaks (scheduled academic breaks)
-    IF v_lower ~* '(semestral\s+break|sem\s+break|christmas\s+break|summer\s+break|vacation|academic\s+break|lenten\s+break|undas)' THEN
-        event_category := 'school_break';
-        friction_domain := 'academic';
-        trigger_category := 'School Break';
-        affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Holidays / Class Suspensions (unscheduled or holiday class off)
-    IF v_lower ~* '(holiday|holy\s+week|class(es)?\s+suspend|suspend(ed)?\s+class|walang\s+pasok|no\s+class|non[- ]?working\s+(day|holiday)?|special\s+(non[- ]?working|public)\s+(day|holiday)?|regular\s+holiday|araw\s+ng|founding\s+anniversary|rizal\s+day|bonifacio\s+day|bonifactio|independence\s+day|labor\s+day|ninoy\s+aquino|national\s+heroes|all\s+saint|all\s+soul|christmas|new\s+year|maundy\s+thursday|good\s+friday|black\s+saturday|easter|immaculate\s+conception|edsa|eid|ramadan|day\s+of\s+valor|quezon\s+city\s+day|manila\s+day|pasig\s+day|marikina\s+day|san\s+juan\s+day|antipolo\s+day|feast\s+of\s+st|up\s+foundation|ateneo\s+president|traslacion|black\s+nazarene|sona|state\s+of\s+the\s+nation)' THEN
-        event_category := 'class_suspension';
-        friction_domain := 'academic';
-        trigger_category := 'Class Suspension / Holiday';
-        affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Graduation / Commencement / Major Campus Festivals (major event surge)
-    IF v_lower ~* '(graduation|commencement|baccalaureate|recognition\s+(day|rites)|paskuhan|lantern\s+parade)' THEN
-        event_category := 'major_event';
-        friction_domain := 'academic';
-        trigger_category := 'Major Arena Event';
-        affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Enrollment period (regular operations)
-    IF v_lower ~* '(enrollment|enrolment|registration|first\s+day\s+of\s+(class|regular)|orientation|opening)' THEN
-        event_category := 'regular_class_day';
-        friction_domain := 'academic';
-        trigger_category := 'Regular Class Day';
-        affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Last day of classes (regular operations)
-    IF v_lower ~* '(last\s+day\s+of\s+(regular\s+)?class|end\s+of\s+(regular\s+)?class)' THEN
-        event_category := 'regular_class_day';
-        friction_domain := 'academic';
-        trigger_category := 'Regular Class Day';
-        affects_ridership := TRUE;
-        RETURN NEXT; RETURN;
-    END IF;
-
-    -- Default: unclassified / no ridership impact
-    event_category := 'unclassified';
-    friction_domain := NULL;
-    trigger_category := NULL;
-    affects_ridership := FALSE;
-    RETURN NEXT; RETURN;
-END;
-$$ LANGUAGE plpgsql STABLE;
-
--- 2c. Function to process a single academic calendar table
-CREATE OR REPLACE FUNCTION external.process_academic_calendar(p_table_name text)
-RETURNS integer AS $$
-DECLARE
-    v_row RECORD;
-    v_class RECORD;
-    v_weight numeric;
-    v_count integer := 0;
-    v_consolidated_id text;
-    v_school_acronym text;
-    v_event_date date;
-    v_stations text[];
-    v_station text;
-BEGIN
-    -- Prevent duplicates: delete all existing consolidated rows for this table first
-    DELETE FROM external.events_consolidated WHERE source_table = p_table_name;
-
-    -- Extract school acronym from table name (e.g., 'UERM_Academic_Calendar' -> 'UERM')
-    v_school_acronym := SPLIT_PART(p_table_name, '_Academic_Calendar', 1);
-
-    -- Iterate over all rows in the calendar table
-    FOR v_row IN EXECUTE format(
-        'SELECT id, station, source_name, event_date, event_name, category, source_url FROM external.%I',
-        p_table_name
-    ) LOOP
-        -- Classify the event
-        SELECT * INTO v_class
-        FROM external.classify_calendar_event(v_row.event_name);
-
-        -- Skip non-ridership events
-        IF v_class.affects_ridership = FALSE OR v_class.affects_ridership IS NULL THEN
-            CONTINUE;
-        END IF;
-
-        -- Look up literature weight
-        SELECT fw.friction_weight INTO v_weight
-        FROM external.friction_weight fw
-        WHERE fw.friction_domain = v_class.friction_domain
-          AND fw.trigger_category = v_class.trigger_category
-        LIMIT 1;
-        v_weight := COALESCE(v_weight, 0.0);
-
-        -- Parse event_date safely
-        BEGIN
-            v_event_date := v_row.event_date::date;
-        EXCEPTION WHEN OTHERS THEN
-            v_event_date := CURRENT_DATE;
-        END;
-
-        -- Resolve list of stations affected by calling get_affected_stations
-        v_stations := external.get_affected_stations(v_row.station, v_row.event_name, '', COALESCE(v_row.source_name, v_school_acronym));
-
-        FOREACH v_station IN ARRAY v_stations LOOP
-            -- Build deterministic consolidated ID to prevent intra-calendar duplicate rows: CAL-[SCH]-[MMDD]-[MD5_HASH]
-            v_consolidated_id := 'CAL-' || UPPER(v_school_acronym) || '-' || TO_CHAR(v_event_date, 'MMDD') || '-' || SUBSTRING(MD5(LOWER(external.normalize_station_name(v_station)) || '_' || LOWER(TRIM(v_row.event_name))), 1, 8);
-
-            INSERT INTO external.events_consolidated (
-                id, station, event_date, source_table, source_id, source_name,
-                event_name, event_category, friction_domain, trigger_category,
-                source_url, description,
-                normalized_score, friction_weight_ref, announcement_time, updated_at
-            )
-            VALUES (
-                v_consolidated_id,
-                external.normalize_station_name(v_station),
-                v_event_date,
-                p_table_name,
-                COALESCE(v_row.id, 'row-' || v_count),
-                COALESCE(v_row.source_name, v_school_acronym),
-                v_row.event_name,
-                v_class.event_category,
-                v_class.friction_domain,
-                v_class.trigger_category,
-                v_row.source_url,
-                'Event: ' || v_row.event_name || ' (Scraped from ' || replace(p_table_name, '_', ' ') || ')',
-                CASE
-                    WHEN v_class.event_category IN ('class_suspension', 'holiday', 'school_break') THEN 1.0
-                    ELSE v_weight
-                END,
-                v_weight,
-                NULL,
-                now()
-            )
-            ON CONFLICT (id) DO UPDATE SET
-                station = EXCLUDED.station,
-                event_date = EXCLUDED.event_date,
-                source_name = EXCLUDED.source_name,
-                event_name = EXCLUDED.event_name,
-                event_category = EXCLUDED.event_category,
-                friction_domain = EXCLUDED.friction_domain,
-                trigger_category = EXCLUDED.trigger_category,
-                source_url = EXCLUDED.source_url,
-                description = EXCLUDED.description,
-                normalized_score = EXCLUDED.normalized_score,
-                friction_weight_ref = EXCLUDED.friction_weight_ref,
-                announcement_time = EXCLUDED.announcement_time,
-                updated_at = now();
-        END LOOP;
-
-        v_count := v_count + 1;
-    END LOOP;
-
-    -- Track this table as processed
-    INSERT INTO external.processed_calendar_tables (table_name, rows_processed, last_processed_at)
-    VALUES (p_table_name, v_count, now())
-    ON CONFLICT (table_name) DO UPDATE SET
-        rows_processed = v_count,
-        last_processed_at = now();
-
-    RETURN v_count;
-END;
-$$ LANGUAGE plpgsql;
-
--- 2d. Polling function: scan for new *_Academic_Calendar tables
-CREATE OR REPLACE FUNCTION external.scan_and_process_new_calendars()
-RETURNS text AS $$
-DECLARE
-    v_table RECORD;
-    v_processed integer;
-    v_results text := '';
-BEGIN
-    FOR v_table IN
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'external'
-          AND table_name LIKE '%\_Academic\_Calendar' ESCAPE '\'
-          AND table_name NOT IN (SELECT table_name FROM external.processed_calendar_tables)
-        ORDER BY table_name
-    LOOP
-        v_processed := external.process_academic_calendar(v_table.table_name);
-        v_results := v_results || v_table.table_name || ': ' || v_processed || ' events processed. ';
-    END LOOP;
-
-    IF v_results = '' THEN
-        RETURN 'No new Academic Calendar tables found.';
-    END IF;
-
-    RETURN v_results;
-END;
-$$ LANGUAGE plpgsql;
-
--- Alias for scan_and_process_new_calendars
-CREATE OR REPLACE FUNCTION external.poll_new_academic_calendars()
-RETURNS text AS $$
-BEGIN
-    RETURN external.scan_and_process_new_calendars();
-END;
-$$ LANGUAGE plpgsql;
-
-
+COMMIT;
