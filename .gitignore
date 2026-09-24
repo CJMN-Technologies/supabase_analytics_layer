@@ -26,7 +26,7 @@ Command Center Dashboard/
 Scraper/
 Analytics/
 runs.json
-scratch/test_*.py
+scratch/
 
 # Python cache
 __pycache__/
