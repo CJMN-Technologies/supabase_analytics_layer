@@ -13,7 +13,7 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 | **Database Engine** | Supabase PostgreSQL (v15+) | Staging landing zone & main database engine |
 | **Transformation Language** | PostgreSQL PL/pgSQL | Custom triggers, classifications, and dynamic proportional distributions |
 | **ML Forecasting** | Python (v3.10), XGBoost, Scikit-learn | Trains models and generates daily passenger volume forecasts ($B_m$) |
-| **Automation & Scheduling** | GitHub Actions | Triggers daily forecasting pipelines (this repo) and hourly scrapers (`python-source-layer` repo) |
+| **Automation & Scheduling** | GitHub Actions + cron-job.org | cron-job.org triggers daily forecasting pipeline (this repo) and hourly scrapers (`python-source-layer` repo) via `workflow_dispatch` for exact-second precision |
 | **Pipeline Validation** | Node.js (v18+) | Executes pipeline DDL updates and performs data integrity checks |
 
 ---
