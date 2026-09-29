@@ -69,8 +69,8 @@ Every weight in `external.friction_weight` is directly backed by open-access NCR
 $$B_{m, \text{seasonal}}(d, m) = B_m \times \left[ 1.0 + \psi_{\text{payday}}(d) + \psi_{\text{academic}}(m) + \psi_{\text{dow}}(d) \right]$$
 
 - **Payday Elasticity ($\psi_{\text{payday}}$):** $+15.2\%$ on 14th, 15th, 16th, 29th, 30th, 31st (UP NCTS Regidor & Tiglao 2021).
-- **Semestral Break Elasticity ($\psi_{\text{academic}}$):** $-18.6\%$ during June–July inter-semestral break, $+5.0\%$ during August–September semester start (JICA & NEDA 2020).
-- **Day-of-Week Elasticity ($\psi_{\text{dow}}$):** $+6.5\%$ on Fridays, $-32.1\%$ on Saturdays, $-44.0\%$ on Sundays (DOTr & LRTA 2022).
+- **Semestral & Monthly Seasonality Elasticity ($\psi_{\text{academic}}$):** $-18.6\%$ during June-July inter-semestral break, $+7.5\%$ during August-September semester start, $+2.5\%$ in January, $-12.5\%$ in April, $+8.4\%$ in November, $+14.8\%$ in December (JICA & NEDA 2020).
+- **Day-of-Week Elasticity ($\psi_{\text{dow}}$):** $+4.5\%$ on Mondays, $+9.8\%$ on Fridays, $-32.1\%$ on Saturdays, $-44.0\%$ on Sundays (DOTr & LRTA 2022).
 
 ### 3.2 Log-Linear Multiplicative Elasticity Post-Processor ($V_p$)
 $$V_p = \text{ROUND}\left( B_{m, \text{seasonal}} \times (1 + \beta_{\text{acad}} S_{\text{acad}}) \times (1 - \beta_{\text{civic}} S_{\text{civic}}) \times (1 - \beta_{\text{weather}} S_{\text{weather}}) \times (1 - \beta_{\text{ops}} S_{\text{ops}}) \right)$$

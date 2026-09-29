@@ -12,7 +12,7 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 | :--- | :--- | :--- |
 | **Database Engine** | Supabase PostgreSQL (v15+) | Staging landing zone & main database engine |
 | **Transformation Language** | PostgreSQL PL/pgSQL | Custom triggers, classifications, and dynamic proportional distributions |
-| **ML Forecasting** | Python (v3.10), XGBoost, Scikit-learn | Trains models and generates daily passenger volume forecasts ($B_m$) |
+| **ML Forecasting** | Python (v3.12), XGBoost, Scikit-learn | Trains models and generates daily passenger volume forecasts ($B_m$) |
 | **Automation & Scheduling** | GitHub Actions + cron-job.org | cron-job.org triggers daily forecasting pipeline (this repo) and hourly scrapers (`python-source-layer` repo) via `workflow_dispatch` for exact-second precision |
 | **Pipeline Validation** | Node.js (v18+) | Executes pipeline DDL updates and performs data integrity checks |
 
@@ -145,17 +145,17 @@ Ridership tables (`ridership_2021` to `ridership_2025` and incoming future table
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 5a. Tier 1 — Descriptive Analytics Layer
+### 5a. Tier 1: Descriptive Analytics Layer
 *   **Dynamic Year Ingestion (`Analytics.rebuild_vw_hourly_actuals()`):** Stored procedure that dynamically discovers all `AFCS.ridership_YYYY` tables and compiles `Analytics.vw_hourly_actuals` with zero manual SQL modifications across arbitrary year ranges.
 *   **Commuter Friction Index (CFI) Mechanics:** Quantifies urban transport impedance as a normalized weighted composite:
     $$CFI = (W_w \times P_{idx}) + (W_a \times A_{sw}) + (W_c \times L_{sp})$$
     where weights $W_w = 0.35$ (Meteorological), $W_a = 0.20$ (Academic Surge), and $W_c = 0.45$ (Civic Mandates) are calibrated from empirical transit studies.
 *   **Non-Parametric Threshold Baselines (`Analytics.hourly_threshold_baselines`):** Replaces easily skewed arithmetic means with non-parametric percentiles:
-    $$W_t = P_{80}(X) \quad (\text{Warning Threshold — Fruin LOS D})$$
-    $$C_t = P_{90}(X) \quad (\text{Critical Threshold — Fruin LOS E/F})$$
+    $$W_t = P_{80}(X) \quad (\text{Warning Threshold: Fruin LOS D})$$
+    $$C_t = P_{90}(X) \quad (\text{Critical Threshold: Fruin LOS E/F})$$
     Pre-computed for every station, day of week, hour period, and flow direction (3,172 baseline records), strictly calibrated to the post-lockdown window (`2023-01-01` to `2025-12-31`).
 
-### 5b. Tier 2 — Predictive Analytics Layer
+### 5b. Tier 2: Predictive Analytics Layer
 *   **Machine Learning Forecasting ($B_m$):** Decoupled XGBoost regression models trained on historical turnstiles (`Analytics.vw_predictive_features`), outputting unperturbed baseline predictions ($B_m$) stored in `Analytics.predictive_model_outputs`.
 *   **Multiplicative Elasticity Post-Processor ($V_p$):** Applies log-linear elasticity sensitivities ($\beta_k$) against real-time friction shocks ($S_k$):
     $$V_p = \text{ROUND}\left( B_{m, \text{seasonal}} \times (1 + \beta_{\text{acad}} S_{\text{acad}}) \times (1 - \beta_{\text{civic}} S_{\text{civic}}) \times (1 - \beta_{\text{weather}} S_{\text{weather}}) \times (1 - \beta_{\text{ops}} S_{\text{ops}}) \right)$$
@@ -166,7 +166,7 @@ Ridership tables (`ridership_2021` to `ridership_2025` and incoming future table
     - `Analytics.predictive_passenger_volume_forecast_1y` (Indexed 1-year macroeconomic trend table for 0ms queries)
 *   **Interactive What-If Scenario Simulator (`"Analytics".predictive_what_if_scenario_simulator`):** Analytics wrapper executing custom what-if disruptions with Gaussian duration envelopes in under 5ms.
 
-### 5c. Tier 3 — Prescriptive Analytics Layer
+### 5c. Tier 3: Prescriptive Analytics Layer
 *   **Interpretable Decision Trees:** Anchored directly to deterministic physical platform capacity utilization ($U_p = \frac{V_c}{K_p} \times 100$), avoiding opaque black-box AI in life-safety operations.
 *   **APTA Crowd-Control Directives:** Routes outputs to pre-approved human-centric "Man-Protocols" (`APTA-01` Platform Metering, `APTA-02` Turnstile Throttling, `APTA-03` Escalator Directional Control, `APTA-04` Headway Compression, `APTA-05` Bus Augmentation, `APTA-06` Station Evacuation).
 *   **Real-Time Dispatch Checklists (`Analytics.prescriptive_active_checklists`):** Automatically compiles and dispatches actionable tactical checklists to Ground Control Mobile clients, with sub-second bidirectional acknowledgment tracking in `Analytics.protocol_task_status`.

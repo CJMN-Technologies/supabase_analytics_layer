@@ -7,7 +7,7 @@ This document compiles the complete concepts, variables, formulations, and step-
 # Section 1: Model Training, Testing, and Validation Concept
 
 ## 1.1 Strict Chronological Data Partitioning
-To ensure the machine learning models learn genuine forecasting rather than mere pattern memorization, the methodology strictly prohibits random data splitting. The data is partitioned chronologically using a Time-Series Cross-Validation approach. Specifically, an 80/20 chronological split is mandated—the algorithms are trained on the earlier 80% of historical LRT system turnstile data and tested purely on the subsequent 20%. This prevents "data leakage" (the model learning from future events) and ensures the models are tested on their true extrapolative forecasting capabilities.
+To ensure the machine learning models learn genuine forecasting rather than mere pattern memorization, the methodology strictly prohibits random data splitting. The data is partitioned chronologically using a Time-Series Cross-Validation approach. Specifically, an 80/20 chronological split is mandated: the algorithms are trained on the earlier 80% of historical LRT system turnstile data and tested purely on the subsequent 20%. This prevents "data leakage" (the model learning from future events) and ensures the models are tested on their true extrapolative forecasting capabilities.
 
 ## 1.2 Decoupled Validation Phases
 To accurately isolate and evaluate system performance, the validation methodology is explicitly decoupled into two distinct testing phases that mirror the system's pipeline:
@@ -15,7 +15,7 @@ To accurately isolate and evaluate system performance, the validation methodolog
 2. **Prescriptive Validation:** Evaluates the decision-making logic of the heuristic Decision Trees and the data-broadcast speed of the cloud pipeline.
 
 ## 1.3 Simulated Scenario Injection (Prescriptive Baselines)
-Live operational stress testing—which historically relied on Command Center staff logging physical reaction times during real-world anomalies—has been completely removed to eliminate human interference from the system's grading. Instead, prescriptive baselines evaluation is conducted via **Simulated Scenario Injection**. In a controlled sandbox environment, historical anomaly datasets (e.g., past severe weather alerts or sudden class suspensions) are fed into the pipeline. This safely and mathematically verifies both the predictive accuracy and the prescriptive logic.
+Live operational stress testing, which historically relied on Command Center staff logging physical reaction times during real-world anomalies, has been completely removed to eliminate human interference from the system's grading. Instead, prescriptive baselines evaluation is conducted via **Simulated Scenario Injection**. In a controlled sandbox environment, historical anomaly datasets (e.g., past severe weather alerts or sudden class suspensions) are fed into the pipeline. This safely and mathematically verifies both the predictive accuracy and the prescriptive logic.
 
 ## 1.4 Minimum Viable Performance Benchmarks
 To be deemed production-ready for the client, the LRT-2 Decision Support System (LRT2 DSS) must achieve or exceed the following concrete Minimum Viable Performance (MVP) passing grades during the simulation phase:

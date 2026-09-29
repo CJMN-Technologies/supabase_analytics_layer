@@ -41,7 +41,7 @@ All parameters, multipliers, feature weights, and threshold bounds in this predi
 
 ## 1.2 Scientific Integrity & Data Ethics: Defining Baseline ($B_m$) vs. ML Forecast ($V_p$)
 
-In transportation analytics and AI decision-support systems, presenting **Historical Baseline** and **ML Model Predictions** as distinct curves is not a visual gimmick—it is a mandatory requirement for **scientific integrity and model transparency**.
+In transportation analytics and AI decision-support systems, presenting **Historical Baseline** and **ML Model Predictions** as distinct curves is not a visual gimmick: it is a mandatory requirement for **scientific integrity and model transparency**.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -102,10 +102,10 @@ $$B_{m, \text{seasonal}}(d, m) = B_m \times \left[ 1.0 + \psi_{\text{payday}}(d)
 Where:
 - **Payday Elasticity Factor** ($\psi_{\text{payday}}$) (UP NCTS Regidor & Tiglao 2018):
   $$\psi_{\text{payday}}(d) = \begin{cases} +0.152 & \text{if } d \in \{14, 15, 16, 29, 30, 31\} \\ 0.000 & \text{otherwise} \end{cases}$$
-- **Academic Semestral Break Factor** ($\psi_{\text{academic}}$) (JICA & NEDA 2020 Study):
-  $$\psi_{\text{academic}}(m) = \begin{cases} -0.186 & \text{if } m \in \{6, 7\} \text{ (June-July Inter-semestral Break)} \\ +0.050 & \text{if } m \in \{8, 9\} \text{ (Peak Semester Opening)} \\ 0.000 & \text{otherwise} \end{cases}$$
+- **Academic Semestral & Monthly Seasonality Factor** ($\psi_{\text{academic}}$) (JICA & NEDA 2020 Study):
+  $$\psi_{\text{academic}}(m) = \begin{cases} +0.025 & \text{if } m = 1 \text{ (January Post-Holiday Resume)} \\ -0.125 & \text{if } m = 4 \text{ (April Holy Week & Summer Break)} \\ -0.186 & \text{if } m \in \{6, 7\} \text{ (June-July Inter-semestral Break)} \\ +0.075 & \text{if } m \in \{8, 9\} \text{ (August-September Peak Semester Opening)} \\ +0.084 & \text{if } m = 11 \text{ (November Undas & Pre-Holiday)} \\ +0.148 & \text{if } m = 12 \text{ (December Holiday Shopping Peak)} \\ 0.000 & \text{otherwise} \end{cases}$$
 - **Day-of-Week Elasticity Factor** ($\psi_{\text{dow}}$) (DOTr 2022 Transit Audit):
-  $$\psi_{\text{dow}}(d) = \begin{cases} +0.065 & \text{if Friday} \\ -0.321 & \text{if Saturday} \\ -0.440 & \text{if Sunday} \\ 0.000 & \text{otherwise} \end{cases}$$
+  $$\psi_{\text{dow}}(d) = \begin{cases} +0.045 & \text{if Monday (AM Rush Spike)} \\ +0.098 & \text{if Friday (PM Weekend Departure Rush)} \\ -0.321 & \text{if Saturday (Commercial Shift)} \\ -0.440 & \text{if Sunday (Low Operations)} \\ 0.000 & \text{otherwise} \end{cases}$$
 
 ---
 

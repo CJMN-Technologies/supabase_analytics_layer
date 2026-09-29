@@ -1,4 +1,4 @@
-# LRT-2 Decision Support System — Database Architecture Specification
+# LRT-2 Decision Support System: Database Architecture Specification
 
 A formal technical specification documenting the database architecture, schema segregation, dimensional modeling, in-database transformation pipelines, and operational paradigms of the **LRT-2 Decision Support System (LRT2 DSS)**.
 
@@ -161,7 +161,7 @@ PostgreSQL Database Cluster (Supabase)
 ### 3.3 `external` (External Environmental & Municipal Shocks)
 * **Domain Responsibility:** Ingestion, tokenization, and consolidation of exogenous urban factors.
 * **Core Base Tables:**
-  * `academic_lgu_events`: Scraped unstructured announcements harvested by `python-source-layer` via Playwright and Gemini 2.0 Flash Vision OCR.
+  * `academic_lgu_events`: Scraped unstructured announcements harvested by `python-source-layer` via Apify Cloud Client and Gemini 2.0 Flash Vision OCR.
   * University Calendars: 8 institutional tables (`ADMU_`, `FEU_`, `PUP_`, `TIP_`, `UERM_`, `UE_`, `UPD_`, `UST_Academic_Calendar` + `processed_calendar_tables`) tracking semester breaks, exam weeks, and athletic events.
   * Weather Ingestion: `weather_current` (13 station feeds), `weather_forecasts` (7-day forecast), `weather_consolidated` (Open-Meteo & PAGASA precipitation and temperature).
   * `events_consolidated`: Normalized event table with categorical severity scoring ($0.0 \le S_k \le 1.0$) mapped by station node and timestamp.
@@ -176,13 +176,13 @@ PostgreSQL Database Cluster (Supabase)
 * **Domain Responsibility:** Declarative codification of formal crowd-management standards.
 * **Core Base Tables:** `apta_protocols`, `apta_protocols_backup`, `apta_protocols_tactics`.
 * **Schema Mechanics:** Maps operating playbooks to standardized industry guidelines:
-  * **APTA-01:** Normal Operations (Standard headway regulation and platform monitoring).
-  * **APTA-02:** High Passenger Volume Warning ($U_p \ge 80\%$, $P_{80}$ non-parametric threshold).
-  * **APTA-03:** Critical Platform Overcrowding ($U_p \ge 90\%$, $P_{90}$ threshold, platform metering).
-  * **APTA-04:** Weather / Flash Flood Emergency Protocol.
-  * **APTA-05:** Academic Influx / Mass University Event Protocol.
-  * **APTA-06:** Technical Fault / Headway Distortion Protocol.
-  * Granular tactics stored in `apta_protocols_tactics` (e.g., escalator direction reversal, turnstile throttling, barrier deployment, skip-stop train insertion).
+  * **APTA-01:** Emergency Egress/Access for Rail Transit Vehicles and Stations (Emergency Evacuation & Platform Metering).
+  * **APTA-02:** Security Considerations for Public Transit Passenger Stations and Stops (Concourse Surge & Holding Area Management).
+  * **APTA-03:** Recommended Practice for Station and Station Area Operations (Normal Operations & Peak Volume Regulation).
+  * **APTA-04:** Emergency Operations Plan (EOP) for Transit Agencies (Network-Wide Stress Events & Multi-Agency Coordination).
+  * **APTA-05:** Heavy-Duty Transportation System Escalator Design Guidelines (Escalator Safety Controls & Flow Reversal).
+  * **APTA-06:** Rail Transit Agency System Emergency Management Requirements (Severe Weather & Extreme Operating Conditions).
+  * Granular tactics stored in `apta_protocols_tactics` (e.g., escalator direction reversal, turnstile throttling, barrier deployment, pulse boarding).
 
 ### 3.6 `Analytics` (3-Tier Decision Support & Serving Core)
 * **Domain Responsibility:** The computational and serving heart of the system.

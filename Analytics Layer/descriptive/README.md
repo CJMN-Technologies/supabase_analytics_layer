@@ -7,30 +7,31 @@ This document compiles the complete concepts, variables, formulations, and step-
 # Section 1: Commuter Friction Index (CFI) Concept & Mechanics
 
 ## 1.1 The Core Concept: Transport Impedance
-The overall concept of the Commuter Friction Index (CFI) is rooted in the idea of "transport impedance". In a dense urban transit environment, external anomalies—like severe weather, sudden class suspensions, or major university events—exert a quantifiable "friction" that disrupts normal commuter flow and alters ridership behavior.
+The overall concept of the Commuter Friction Index (CFI) is rooted in the idea of "transport impedance". In a dense urban transit environment, external anomalies, such as severe weather, sudden class suspensions, or major university events, exert a quantifiable "friction" that disrupts normal commuter flow and alters ridership behavior.
 
 The primary purpose of the CFI is to act as a bridge between delayed historical turnstile data and near real-time urban threats. Instead of relying on qualitative observations (e.g., "it's raining heavily" or "classes are suspended"), the CFI synthesizes these chaotic, unstructured external triggers into a single, standardized numerical scale.
 
 ## 1.2 How It Works: Mathematical Formulation
-During the generation of an hourly context snapshot, the system calculates the CFI as a weighted composite of the active external dimensions currently impacting the transit network.
+During the generation of an hourly context snapshot, the system calculates the CFI as a weighted composite of the active external and operational dimensions currently impacting the transit network.
 
 The mathematical formulation is:
 
-$$CFI = (W_w \times P_{idx}) + (W_a \times A_{sw}) + (W_c \times L_{sp})$$
+$$CFI = (W_w \times P_{idx}) + (W_a \times A_{sw}) + (W_c \times C_{md}) + (W_o \times O_{ps})$$
 
 Here is how the variables break down:
 *   **$P_{idx}$ (Meteorological Friction):** This represents the baseline weather friction derived from near real-time PAGASA alerts, scaling with the severity of the tropical cyclone wind signal and recorded rainfall.
 *   **$A_{sw}$ (Academic Surge Weight):** This variable reflects the density of active university events within the transit line's catchment area, pulled directly from academic calendars.
-*   **$L_{sp}$ (Surge Probability Multiplier):** This is derived from local government mandates, specifically activating when official class suspensions are announced.
-*   **$W_w, W_a, W_c$ (Algorithmic Weights):** These are the specific weights assigned to each of the three triggers above to determine their relative impact.
+*   **$C_{md}$ (Civic Mandate / Transport Strike):** This is derived from local government mandates and transport strike declarations, specifically activating during official class suspensions, work halts, or transport strikes.
+*   **$O_{ps}$ (Operational Incident Telemetry):** This represents internal railway operational disturbances, including track faults, catenary power outages, and headway disruptions.
+*   **$W_w, W_a, W_c, W_o$ (Algorithmic Weights):** These are the specific empirical weights assigned to each of the four domains to determine their relative impact.
 
 ## 1.3 Determining the Weights: Literature-Derived Parameter Calibration
 Because historical turnstile logs (batch data) and live urban triggers (micro-batch data) process at different speeds, the system cannot perfectly synchronize them to learn the weights automatically. Instead, the system uses **Literature-Derived Parameter Calibration**.
 
-Rather than arbitrarily assigning importance, the initial weight distributions ($W$) are synthesized from established, peer-reviewed urban mobility studies that quantify exactly how much weather events and civic mandates typically impact baseline transit ridership. These statistical proportions are then normalized to a sum of 1.0.
+Rather than arbitrarily assigning importance, the initial weight distributions ($W$) are synthesized from established, peer-reviewed urban mobility studies that quantify exactly how much weather events, academic cycles, civic mandates, and operational faults typically impact baseline transit ridership. These statistical proportions are normalized to a sum of 1.0.
 
 ## 1.4 The Operational Value
-Ultimately, this mathematically rigorous index ensures that highly disparate external variables are combined into one continuous gauge. By feeding this index into the predictive algorithms (like XGBoost) and displaying it on the command dashboard, transit operators gain an instantaneous, mathematically sound assessment of how much environmental resistance the transit system is currently facing.
+Ultimately, this mathematically rigorous index ensures that highly disparate external variables are combined into one continuous gauge. By feeding this index into the predictive algorithms (like Gradient Boosting and PostgreSQL PL/pgSQL elasticity models) and displaying it on the command dashboard, transit operators gain an instantaneous, mathematically sound assessment of how much environmental resistance the transit system is currently facing.
 
 ---
 
@@ -41,15 +42,17 @@ Below is the dictionary of the mathematical symbols and their corresponding desc
 ### The Composite Metric
 * **$CFI$**: Commuter Friction Index
 
-### External Urban Triggers (Normalized Inputs)
+### External & Operational Triggers (Normalized Inputs)
 * **$P_{idx}$**: Meteorological Friction (Weather Severity derived from PAGASA)
 * **$A_{sw}$**: Academic Surge Weight (University Event Density)
-* **$L_{sp}$**: Surge Probability Multiplier (Official Class Suspensions / LGU Mandates)
+* **$C_{md}$**: Civic Mandates & Transport Strikes (Official Class Suspensions / LGU Mandates)
+* **$O_{ps}$**: Operational Incidents & Railway Disruptions (PSOR / GCS Incident Telemetry)
 
 ### Literature-Derived Algorithmic Weights (Multipliers)
-* **$W_w$**: Algorithmic Weight for Meteorological Friction (35% or 0.35)
-* **$W_a$**: Algorithmic Weight for Academic Surge (20% or 0.20)
-* **$W_c$**: Algorithmic Weight for Civic Mandates (45% or 0.45)
+* **$W_w$**: Algorithmic Weight for Meteorological Friction (25% or 0.25)
+* **$W_a$**: Algorithmic Weight for Academic Surge (15% or 0.15)
+* **$W_c$**: Algorithmic Weight for Civic Mandates & Strikes (35% or 0.35)
+* **$W_o$**: Algorithmic Weight for Operational Rail Incidents (25% or 0.25)
 
 ---
 
@@ -78,7 +81,7 @@ Because official class suspensions are typically binary declarations, this norma
 # Section 4: Threshold Benchmarking via Percentiles
 
 ## 4.1 The Problem with Traditional Averages
-In standard transit operations, historical baselines are often established using simple arithmetic means (averages). However, in high-density, highly volatile environments like LRT-2—which is heavily impacted by sudden student commuter surges, weather suspensions, and university events—using the mean is mathematically inadequate. Simple averages are easily skewed by extreme statistical outliers. If a massive crowd surge happens on a Tuesday, the average for all Tuesdays is artificially dragged upward, resulting in a distorted baseline that triggers false alarms or delayed responses.
+In standard transit operations, historical baselines are often established using simple arithmetic means (averages). However, in high-density, highly volatile environments like LRT-2, which is heavily impacted by sudden student commuter surges, weather suspensions, and university events, using the mean is mathematically inadequate. Simple averages are easily skewed by extreme statistical outliers. If a massive crowd surge happens on a Tuesday, the average for all Tuesdays is artificially dragged upward, resulting in a distorted baseline that triggers false alarms or delayed responses.
 
 ## 4.2 The Solution: Non-Parametric Percentiles
 To resolve this, the Decision Support System (DSS) abandons simple averages in favor of **non-parametric statistical percentiles** (specifically the 80th and 90th percentiles).

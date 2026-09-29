@@ -1,4 +1,4 @@
-# LRT-2 Decision Support System — High-Level System Architecture
+# LRT-2 Decision Support System: High-Level System Architecture
 
 A comprehensive architectural specification documenting the end-to-end topology, data flow pipelines, database schemas, and operational feedback loops across all five sub-applications in the LRT-2 Commuter Friction & Decision Support ecosystem.
 
@@ -23,14 +23,14 @@ flowchart TB
     %% =========================================================================
     subgraph SCRAPER["⚙️ 2. Source Layer (python-source-layer)"]
         direction TB
-        PW["Playwright Stealth Scraper<br/>(DOM Expansion, Desktop Emulation)"]
+        APIFY["Apify Cloud Scraper<br/>(Residential Proxies, Un-truncated Captions)"]
         OCR["Gemini 2.0 Flash Vision<br/>(Infographic OCR & Pre-filters)"]
-        WTH_PIPE["Weather Pipeline & Watchdog<br/>(Hourly Cron 5:00 AM – 10:00 PM PHT)"]
+        WTH_PIPE["Weather Pipeline & Watchdog<br/>(Hourly Cron 5:00 AM - 10:00 PM PHT)"]
         INT_ETL["Internal Data Extractor<br/>(AFCS Turnstile & Capacity Batches)"]
     end
 
-    FB --> PW
-    PW --> OCR
+    FB --> APIFY
+    APIFY --> OCR
     WTH --> WTH_PIPE
     AFCS_SRC --> INT_ETL
     PSOR_SRC --> INT_ETL
@@ -128,11 +128,11 @@ flowchart TB
 
 | Sub-Application | Path | Primary Tech Stack | Core Responsibilities |
 |---|---|---|---|
-| **1. Source Layer** | `Scraper/` (`python-source-layer`) | Python 3.12, Playwright, BeautifulSoup, Gemini 2.0 Flash | • Scrapes official Facebook academic/LGU announcements.<br>• Extracts text from advisory infographics via Gemini Vision OCR.<br>• Fetches hourly Open-Meteo weather observations and 7-day forecasts.<br>• Executes internal AFCS turnstile ETL batches. |
-| **2. Transformation & ML Layer** | `Analytics/` (`supabase_analytics_layer`) | PostgreSQL PL/pgSQL, Python 3.10, XGBoost, Scikit-learn | • Standardizes raw inputs into the Commuter Friction Index (CFI).<br>• Runs classification functions (`classify_event_from_text`).<br>• Trains volume prediction models ($B_m$) and computes headroom.<br>• Compiles prescriptive crowd-control checklists against APTA standards. |
-| **3. Decision Support Dashboard** | `Command Center Dashboard/` | Next.js 16.2, Electron 31, TailwindCSS, Recharts | • Mission-control interface for transit controllers.<br>• Visualizes 24h, 1w, quarterly, and 1y predictive passenger volumes.<br>• Runs what-if simulations with realistic diurnal curves.<br>• Exports printable A4 executive PDF reports.<br>• Dispatches APTA crowd management checklists. |
-| **4. Ground Control Mobile** | `Ground Control Mobile/` | React Native 0.81, Expo 54, NativeWind | • Field client for station safety officers and platform personnel.<br>• Displays prioritized real-time APTA checklists (Urgent / Warning / Normal).<br>• Enables rapid incident reporting with camera evidence capture.<br>• Provides offline mutation queuing (`useOfflineSync`). |
-| **5. IAM Superadmin Portal** | `Identity Access and Management Portal/` | Next.js 16.2, Electron, TailwindCSS, Radix UI | • Single source of truth for user authentication and authorization.<br>• Enforces Role-Based Access Control (`SAxxxx`, `POxxxx`, `CCOxxxx`, `GCSxxxx`).<br>• Immutably records administrative actions in `iam.audit_logs`. |
+| **1. Source Layer** | `Scraper/` (`python-source-layer`) | Python 3.12, Apify Client, Gemini 2.0 Flash, Requests | • Scrapes official Facebook academic/LGU announcements via Apify residential proxies.<br>• Extracts text from advisory infographics via Gemini Vision OCR.<br>• Fetches hourly Open-Meteo weather observations and 7-day forecasts.<br>• Executes internal AFCS turnstile ETL batches. |
+| **2. Transformation & ML Layer** | `Analytics/` (`supabase_analytics_layer`) | PostgreSQL PL/pgSQL, Python 3.12, Scikit-learn, Node.js | • Standardizes raw inputs into the Commuter Friction Index (CFI).<br>• Runs classification functions (`classify_event_from_text`).<br>• Computes volume predictions ($B_m, V_p$) and capacity headroom.<br>• Compiles prescriptive crowd-control checklists against APTA standards. |
+| **3. Decision Support Dashboard** | `Command Center Dashboard/` | Next.js 16.2, Electron 42, TailwindCSS, Recharts, Motion | • Mission-control interface for transit controllers.<br>• Visualizes 24h, 1w, quarterly, and 1y predictive passenger volumes.<br>• Runs what-if simulations with realistic diurnal curves.<br>• Exports printable A4 executive PDF reports.<br>• Dispatches APTA crowd management checklists. |
+| **4. Ground Control Mobile** | `Ground Control Mobile/` | React Native 0.81, Expo 54, NativeWind, AsyncStorage | • Field client for station safety officers and platform personnel.<br>• Displays prioritized real-time APTA checklists (Urgent / Warning / Normal).<br>• Enables rapid incident reporting with camera evidence capture.<br>• Provides offline mutation queuing (`useOfflineSync`). |
+| **5. IAM Superadmin Portal** | `Identity Access and Management Portal/` | Next.js 16.2, Electron 43, TailwindCSS, Radix UI | • Single source of truth for user authentication and authorization.<br>• Enforces Role-Based Access Control (`SAxxxx`, `POxxxx`, `CCOxxxx`, `GCSxxxx`).<br>• Immutably records administrative actions in `iam.audit_logs`. |
 
 ---
 
@@ -243,6 +243,6 @@ erDiagram
 | **User Authentication** | Supabase Auth + JWT Tokens | API Gateway & App Route Guards |
 | **Role Authorization** | RBAC bitmasks stored in `iam.roles` | PostgreSQL Row-Level Security (RLS) & UI Guards |
 | **Audit Immutability** | Append-only table (`iam.audit_logs`) | Revoked `UPDATE`/`DELETE` permissions |
-| **Scraper Rate Limits** | Partitioned cookie pools & delay throttling | Playwright worker processes |
+| **Scraper Rate Limits** | Residential IP rotation and pay-per-event execution | Apify Cloud Client actor |
 | **Offline Resilience** | FIFO queue in local storage (`AsyncStorage`) | `useOfflineSync` NetInfo reconnection hook |
 | **Photo Upload Integrity** | Isolated bucket (`incident-photos`) | Supabase Storage RLS policies |
