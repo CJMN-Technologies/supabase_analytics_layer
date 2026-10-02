@@ -21,25 +21,25 @@ This layer serves as the **landing and transformation zone** to compute the **Co
 ## 2. Directory Structure
 
 ```text
+├── Analytics Layer/
+│   ├── descriptive/                           # Descriptive analytics layer & threshold benchmarking
+│   ├── model_training/                        # Model training, validation, and feature importance scripts
+│   ├── predictive/                            # Predictive forecasting & scenario simulation
+│   └── prescriptive/                          # Prescriptive protocols & decision logic
 ├── Transformation Layer/
-│   ├── internal/
-│   │   ├── restore_ridership_backups.sql      # Aggregates raw ridership inputs to backups
-│   │   ├── standardize_internal_dimensions.sql# Standardizes PSOR and Station Capacity dimensions
-│   │   └── transform_ridership_hourly.sql     # Converts backups to hourly active ridership
-│   ├── external/
-│   │   ├── consolidate_events_schema.sql      # Text classification & scraped events sync
-│   │   ├── consolidate_weather_schema.sql     # Pagasa weather alert parsing & current/forecast weather sync
-│   │   └── standardize_external_triggers.sql  # Compiles classifiers and A_sw/PAGASA triggers
-│   ├── literature/
-│   │   └── standardize_literature_dimensions.sql # Sets up APTA tables and seeds weights
-│   └── applications/
-│       ├── iam_portal_schema.sql              # User profiles, administrative logs, and custom RBAC DDL
-│       ├── ground_control_schema.sql          # Mobile shifts, incidents, emergency contacts, and real-time sync triggers
-│       └── uat_metrics_append_only_ledger.sql # Immutable prescriptive evaluation baselines & metrics ledger
+│   ├── applications/                          # Mobile, IAM portal, and UAT schema DDL
+│   ├── external/                              # Scraped events and weather consolidated schemas
+│   ├── internal/                              # Ridership hourly and station capacity dimensions
+│   └── literature/                            # Literature friction weights & APTA dimensions
+├── sql/
+│   ├── anomalies/                             # Historical scraped event purge & remediation scripts
+│   ├── fixes/                                 # Classifier, trigger, and geofencing patches
+│   └── schema/                                # Core indexes, RLS policies, and hourly aggregation DDL
 ├── run_pipeline.js                            # Core orchestration runner and data integrity check suite
+├── generate_sql.js                            # SQL compiler and pipeline generator
 ├── package.json                               # Node dependencies (pg, @supabase/supabase-js)
-├── .env.example                               # Template for database credentials
-└── README.md                                  # Project Documentation
+├── requirements.txt                           # Python dependencies (scikit-learn, xgboost)
+└── README.md                                  # Sub-application Documentation
 ```
 
 ---
@@ -101,11 +101,12 @@ Triggers process qualitative logs on-write and save them under short, unique IDs
   - **Typhoon Advisory Safety Guardrail**: LGU and PAGASA severe weather bulletins mentioning typhoons or tropical cyclone wind signals are strictly preserved under `WEATHER_ADVISORY` and forbidden from being misclassified as transit `Holiday` records.
   - **Constrained Statutory Holiday Phrasing & EDSA Landmark Disambiguation**: In `external.classify_event_from_text()`, holiday triggers are strictly constrained to statutory/official designations (`araw ng (kagitingan|maynila|kalayaan|...)`, `edsa (people power)? (day|revolution|anniversary)`). Bare mentions of `"EDSA"` (e.g. *EDSA People Power Monument*, *EDSA Busway*, or *EDSA traffic advisory*) are prevented from triggering statutory holiday shocks.
   - **Motorist Surface Traffic Advisory Guardrail**: Traffic management advisories issued for road motor vehicles (e.g. *"Abiso sa mga motorista"*, *"alternatibong ruta"*, *"pagbagal ng daloy ng trapiko"*) around highway landmarks are classified as non-disruptive municipal infrastructure (`affects_ridership = FALSE`), ensuring road congestion notices never induce false train ridership cancellations.
-  - **Advance Academic Calendar Break & Holiday Memo Guardrail (>14 Days Ahead)**: Announcements of upcoming holiday breaks, sem breaks, or Undas breaks published more than 14 days in advance of their start date (e.g. San Beda announcing late-October Undas Break on Sept 30) are suppressed from inserting daily operational shock entries into vents_consolidated (ffects_ridership = FALSE). This prevents premature daily holiday shock sequences weeks ahead of the operational horizon while logging the advance notice cleanly in source records (sync_academic_lgu_to_events_consolidated).
-  - **Sports Arena & Stadium Venue-Accurate Routing**: When an event text or infographic explicitly references a major sports stadium or arena along the transit corridor (e.g. Playtime Filoil EcoOil Centre in San Juan, Smart Araneta Coliseum, PhilSports Arena / ULTRA, Rizal Memorial), xternal.get_affected_stations() routes the event strictly to the station serving that arena (J. Ruiz for Filoil, Araneta Center Cubao for Araneta, Santolan / Marikina-Pasig for PhilSports), overriding the posting school's home campus location (e.g. San Beda Mendiola / Legarda).
-  - **Online Modality Shift Precedence Over Transport Strike**: When an educational institution announces a transition to online or asynchronous classes in response to a transport strike (e.g. UE Manila shifting to online modality), xternal.classify_event_from_text() prioritizes Online / Asynchronous Class Shift (0.85 friction, category class_suspension) over raw transport strike (0.90 friction, category 	ransport_strike), accurately reflecting that commuter transit impedance is governed by campus classroom closure rather than rail line failure.
-  - **Government Employee Internal Office Work vs Commuter Class Suspensions**: City hall or government employee internal work suspensions (e.g. Pasig City Hall half-day closure for Civil Service Family Week) where universities and private commuter activities remain in session are categorized as non-disruptive LGU Internal Operations (ffects_ridership = FALSE), preventing false school shock injections across Santolan and Marikina stations.
-  - **Routine Municipal Maintenance & Civil Registry Noise Isolation**: Routine LGU activities including drainage canal declogging, ditch cleaning, grass cutting, tree trimming, street asphalting/pothole patching, TUPAD profiling/payouts, birth registration caravans, and localized water service interruptions are classified under infrastructure / LGU Municipal Clearing & Maintenance (ffects_ridership = FALSE), preventing municipal maintenance updates from triggering ridership shocks.
+  - **Advance Academic Calendar Break & Holiday Memo Guardrail (>14 Days Ahead)**: Announcements of upcoming holiday breaks, sem breaks, or Undas breaks published more than 14 days in advance of their start date (e.g. San Beda announcing late-October Undas Break on Sept 30) are suppressed from inserting daily operational shock entries into `events_consolidated` (`affects_ridership = FALSE`). This prevents premature daily holiday shock sequences weeks ahead of the operational horizon while logging the advance notice cleanly in source records (`sync_academic_lgu_to_events_consolidated`).
+  - **Sports Arena & Stadium Venue-Accurate Routing**: When an event text or infographic explicitly references a major sports stadium or arena along the transit corridor (e.g. Playtime Filoil EcoOil Centre in San Juan, Smart Araneta Coliseum, PhilSports Arena / ULTRA, Rizal Memorial), `external.get_affected_stations()` routes the event strictly to the station serving that arena (J. Ruiz for Filoil, Araneta Center Cubao for Araneta, Santolan / Marikina-Pasig for PhilSports), overriding the posting school's home campus location (e.g. San Beda Mendiola / Legarda).
+  - **Online Modality Shift Precedence Over Transport Strike**: When an educational institution announces a transition to online or asynchronous classes in response to a transport strike (e.g. UE Manila shifting to online modality), `external.classify_event_from_text()` prioritizes Online / Asynchronous Class Shift (0.85 friction, category `class_suspension`) over raw transport strike (0.90 friction, category `transport_strike`), accurately reflecting that commuter transit impedance is governed by campus classroom closure rather than rail line failure.
+  - **Broad-Spectrum Government & Civil Service Work Suspensions vs Commuter Class Suspensions**: Declarations of half-day or holiday work suspensions applicable solely to city hall, municipal departments, courts/judiciary, or national civil service agencies (e.g. Malacañang Memorandum Circular No. 64, Civil Service Commission National Family Week, City Hall skeleton workforces, government work-from-home orders) where schools, universities, and commercial transit remain in normal session are categorized as non-disruptive `LGU Internal Operations` (`affects_ridership = FALSE`), strictly preventing false school shock injections across Santolan, Marikina, and other transit corridor stations.
+  - **Bridge Underpasses, Flyovers, Overpasses & Barangay Fiesta Concerts Guardrail**: Micro-arterial road closures under bridges, flyovers, overpasses, or local interior streets (e.g. Rosario Bridge underpass closure, C5 flyovers) for barangay founding anniversaries ("Araw ng Barangay"), fiesta celebrations, and Sangguniang Kabataan (SK) live band concerts are classified under infrastructure / `LGU Traffic Advisory` (`affects_ridership = FALSE`). This prevents hyper-local street gatherings and motorist detour advisories from being misclassified as transit-scale `MAJOR_ARENA_EVENT` disruptions.
+  - **Routine Municipal Maintenance & Civil Registry Noise Isolation**: Routine LGU activities including drainage canal declogging, ditch cleaning, canal desilting, grass cutting, tree trimming, street asphalting/pothole patching, TUPAD profiling/payouts, civil registry/birth registration caravans, and localized utility service interruptions are classified under infrastructure / `LGU Municipal Clearing & Maintenance` (`affects_ridership = FALSE`), preventing municipal maintenance updates from triggering ridership shocks.
   - Auto-normalizes class suspension and online modality shift events to binary score `1.0`.
   - Automatically propagates `source_url` (Facebook announcement permalink) and `description` (raw post text) into consolidated records.
   - Non-disruptive LGU weather monitoring, rainfall advisories, river maintenance, estero clean-up operations, and road flood updates are classified as `LGU Weather / Flooding Advisory` or `LGU Municipal Clearing & Maintenance` (`affects_ridership = FALSE`), preventing false-positive capacity dampeners or erroneous `"Holiday"` / `"University Milestone / Surge"` tags.
@@ -190,8 +191,8 @@ The model training, testing, and validation pipeline partitions turnstile data c
 * **`"Analytics".vw_uat_executive_summary`**: High-level audit view exposing cumulative all-time prescriptive evaluation passing rates, average historical MAPE/RMSE, overall SCR compliance %, and pipeline latency SLA compliance.
 
 The validation pipeline can be executed:
-- **Database-Natively (Recommended):** By calling `SELECT "Analytics".train_and_validate_models();` or executing `"Analytics Layer/model training, testing and validation"/train_and_validate.sql`.
-- **Via Python Script:** By executing `python "Analytics Layer/model training, testing and validation/train_and_validate.py"`.
+- **Database-Natively (Recommended):** By calling `SELECT "Analytics".train_and_validate_models();` or executing `"Analytics Layer/model_training"/train_and_validate.sql`.
+- **Via Python Script:** By executing `python "Analytics Layer/model_training/train_and_validate.py"`.
 
 ---
 
