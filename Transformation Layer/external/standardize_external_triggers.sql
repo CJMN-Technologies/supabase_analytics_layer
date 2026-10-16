@@ -278,6 +278,18 @@ BEGIN
         RETURN;
     END IF;
 
+    -- Filter 1b: Routine Academic Calendar Reminders & Modality Clarifications (Broad-Spectrum Anti-Overfitting)
+    IF (v_combined ~* '(post\s*[-–—]\s*(?:midterm|final|exam|prelim)|asynchronous\s+sessions?\s+after\s+(?:midterm|exam|finals?)|clarification\s+on\s+.*(?:class\s+modality|asynchronous|schedule)|(?:official|existing|routine|scheduled)\s+asynchronous\s+class\s+schedule|asynchronous\s+class\s+schedule\s+(?:will|shall)\s+be\s+(?:followed|maintained|observed)|shall\s+proceed\s+as\s+scheduled|proceed\s+as\s+scheduled|as\s+per\s+academic\s+calendar|routine\s+asynchronous|scheduled\s+asynchronous|consultation\s+sessions?|insufficient\s+responses\s+to\s+support\s+the\s+proposed\s+petition|petition\s+for\s+changes\s+to\s+the\s+schedule)'
+        AND NOT v_combined ~* '(suspend|walang\s*pasok|bagyo|typhoon|baha|flood|strike|welga|tigil\s+pasada|heat\s+index|emergency|earthquake|lindol)') THEN
+        event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Scheduled Academic Calendar Activity');
+        event_category := 'administrative';
+        friction_domain := 'academic';
+        trigger_category := 'University Academic Calendar';
+        affects_ridership := FALSE;
+        RETURN NEXT;
+        RETURN;
+    END IF;
+
     -- Filter 2: Administrative / Internal notices
     IF v_combined ~* '(promotions?\s+board|posting\s+of.*(grade|result)|deliberation|grade\s+release|final\s+grade|drop(ping)?\s+of\s+subject|leave\s+of\s+absence|filing\s+of\s+leave)' THEN
         event_name := COALESCE(NULLIF(TRIM(p_event_name), ''), 'Administrative/Internal Notice');

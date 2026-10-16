@@ -526,29 +526,113 @@ DECLARE
     v_sim numeric;
     v_var numeric;
     v_threat text;
+    v_hh integer;
+    v_mm integer;
+    v_lower_hour text;
+    v_upper_hour text;
+    v_base_lower numeric;
+    v_base_upper numeric;
+    v_warn_lower integer;
+    v_warn_upper integer;
+    v_crit_lower integer;
+    v_crit_upper integer;
 BEGIN
-    -- 1. Get baseline (override or pre-calculated median) and thresholds
-    SELECT 
-        COALESCE(p_baseline_override, tb.median_volume, 0.0),
-        tb.warning_threshold,
-        tb.critical_threshold
-    INTO v_base, v_warning, v_critical
-    FROM "Analytics".hourly_threshold_baselines tb
-    WHERE tb.station_name = p_station_name
-      AND tb.day_of_week = p_day_of_week
-      AND tb.hour_period = p_hour_period
-      AND tb.flow_type = p_flow_type;
+    -- 1. If explicit baseline override is provided, use it directly
+    IF p_baseline_override IS NOT NULL AND p_baseline_override > 0 THEN
+        v_base := p_baseline_override;
+        
+        -- Fetch station-specific thresholds from hourly baseline or platform safe capacity
+        SELECT tb.warning_threshold, tb.critical_threshold
+        INTO v_warning, v_critical
+        FROM "Analytics".hourly_threshold_baselines tb
+        WHERE tb.station_name = p_station_name
+          AND tb.day_of_week = p_day_of_week
+          AND tb.flow_type = p_flow_type
+        ORDER BY ABS(EXTRACT(HOUR FROM tb.hour_period::time) - substring(p_hour_period from 1 for 2)::integer) ASC
+        LIMIT 1;
 
-    -- Fallback if no matching baseline row is found
-    IF v_base IS NULL THEN
-        v_base := COALESCE(p_baseline_override, 0.0);
-        v_warning := 1000;
-        v_critical := 1200;
+        IF v_critical IS NULL THEN
+            SELECT max_safe_platform_capacity INTO v_critical
+            FROM "Analytics".prescriptive_station_capacities
+            WHERE station_name = p_station_name;
+            v_warning := ROUND(COALESCE(v_critical, 1500) * 0.8);
+            v_critical := COALESCE(v_critical, 1500);
+        END IF;
+    ELSE
+        -- Attempt exact hourly match
+        SELECT 
+            tb.median_volume,
+            tb.warning_threshold,
+            tb.critical_threshold
+        INTO v_base, v_warning, v_critical
+        FROM "Analytics".hourly_threshold_baselines tb
+        WHERE tb.station_name = p_station_name
+          AND tb.day_of_week = p_day_of_week
+          AND tb.hour_period = p_hour_period
+          AND tb.flow_type = p_flow_type;
+
+        -- If no exact match (e.g. half-hour timestamp like '07:30' or '15:30'), interpolate
+        IF v_base IS NULL THEN
+            v_hh := substring(p_hour_period from 1 for 2)::integer;
+            v_mm := substring(p_hour_period from 4 for 2)::integer;
+            v_lower_hour := to_char(v_hh, 'FM00') || ':00';
+            v_upper_hour := to_char(LEAST(23, v_hh + 1), 'FM00') || ':00';
+
+            SELECT median_volume, warning_threshold, critical_threshold
+            INTO v_base_lower, v_warn_lower, v_crit_lower
+            FROM "Analytics".hourly_threshold_baselines
+            WHERE station_name = p_station_name
+              AND day_of_week = p_day_of_week
+              AND hour_period = v_lower_hour
+              AND flow_type = p_flow_type;
+
+            SELECT median_volume, warning_threshold, critical_threshold
+            INTO v_base_upper, v_warn_upper, v_crit_upper
+            FROM "Analytics".hourly_threshold_baselines
+            WHERE station_name = p_station_name
+              AND day_of_week = p_day_of_week
+              AND hour_period = v_upper_hour
+              AND flow_type = p_flow_type;
+
+            IF v_base_lower IS NOT NULL AND v_base_upper IS NOT NULL THEN
+                v_base := ROUND(v_base_lower + (v_base_upper - v_base_lower) * (v_mm::numeric / 60.0));
+                v_warning := ROUND(v_warn_lower + (v_warn_upper - v_warn_lower) * (v_mm::numeric / 60.0));
+                v_critical := ROUND(v_crit_lower + (v_crit_upper - v_crit_lower) * (v_mm::numeric / 60.0));
+            ELSIF v_base_lower IS NOT NULL THEN
+                v_base := v_base_lower;
+                v_warning := v_warn_lower;
+                v_critical := v_crit_lower;
+            ELSIF v_base_upper IS NOT NULL THEN
+                v_base := v_base_upper;
+                v_warning := v_warn_upper;
+                v_critical := v_crit_upper;
+            ELSE
+                -- Nearest operating hour fallback
+                SELECT median_volume, warning_threshold, critical_threshold
+                INTO v_base, v_warning, v_critical
+                FROM "Analytics".hourly_threshold_baselines
+                WHERE station_name = p_station_name
+                  AND day_of_week = p_day_of_week
+                  AND flow_type = p_flow_type
+                ORDER BY ABS(EXTRACT(HOUR FROM hour_period::time) - v_hh) ASC
+                LIMIT 1;
+            END IF;
+        END IF;
+
+        -- Final failsafe if station has no records in hourly_threshold_baselines
+        IF v_base IS NULL THEN
+            SELECT max_safe_platform_capacity INTO v_critical
+            FROM "Analytics".prescriptive_station_capacities
+            WHERE station_name = p_station_name;
+            v_critical := COALESCE(v_critical, 1500);
+            v_warning := ROUND(v_critical * 0.8);
+            v_base := ROUND(v_warning * 0.45);
+        END IF;
     END IF;
 
     -- 2. Calculate simulated volume using adjusted formula
     v_sim := ROUND(
-        v_base * (1.0 + (0.30 * p_academic_score) - (0.45 * p_civic_score) - (0.175 * p_weather_score))
+        v_base * GREATEST(0.10, (1.0 + (0.30 * p_academic_score) - (0.45 * p_civic_score) - (0.175 * p_weather_score)))
     );
 
     -- 3. Calculate peak variance percentage
